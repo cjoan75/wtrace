@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading;
+using Tx.Windows.Etw;
 
 namespace Tx.Windows
 {
@@ -61,7 +62,7 @@ namespace Tx.Windows
             {
                 _logFiles[i] = new EVENT_TRACE_LOGFILE
                 {
-                    ProcessTraceMode = EtwNativeMethods.TraceModeEventRecord,
+                    ProcessTraceMode = EtwNativeConstants.TraceModeEventRecord,
                     LogFileName = Path.GetFullPath(etlFiles[i]),
                     EventRecordCallback = EtwCallback
                 };
@@ -139,10 +140,10 @@ namespace Tx.Windows
                 {
                     _handles[i] = EtwNativeMethods.OpenTrace(ref _logFiles[i]);
 
-                    if (_handles[i] == EtwNativeMethods.InvalidHandle)
+                    if (_handles[i] == EtwNativeConstants.InvalidHandle)
                     {
                         error = Marshal.GetLastWin32Error();
-                        if (error == EtwNativeMethods.ErrorNotFound)
+                        if (error == EtwNativeConstants.ErrorNotFound)
                         {
                             _observer.OnError(new FileNotFoundException("Could not find file " + _logFiles[i].LogFileName));
                             return;
@@ -195,10 +196,10 @@ namespace Tx.Windows
             {
                 _handles[i] = EtwNativeMethods.OpenTrace(ref _logFiles[i]);
 
-                if (_handles[i] == EtwNativeMethods.InvalidHandle)
+                if (_handles[i] == EtwNativeConstants.InvalidHandle)
                 {
                     error = Marshal.GetLastWin32Error();
-                    if (error == EtwNativeMethods.ErrorNotFound)
+                    if (error == EtwNativeConstants.ErrorNotFound)
                     {
                         _observer.OnError(new FileNotFoundException("Could not find file " + _logFiles[i].LogFileName));
                         return;

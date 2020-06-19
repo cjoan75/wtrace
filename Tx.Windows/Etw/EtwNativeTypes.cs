@@ -1,8 +1,10 @@
-﻿using System;
+﻿// Sources imported from the Tx.Windows and Perfview projects with my modifications
+
+using System;
 using System.Runtime.InteropServices;
 using System.Security;
 
-namespace LowLevelDesign.WTrace.Native
+namespace Tx.Windows
 {
     [SuppressUnmanagedCodeSecurity]
     internal delegate void PEVENT_RECORD_CALLBACK([In] ref EVENT_RECORD eventRecord);
@@ -374,5 +376,71 @@ namespace LowLevelDesign.WTrace.Native
         public MAP_FLAGS Flag;
         public uint EntryCount;
         public uint FormatStringOffset; // This should be union
+    };
+
+    /// <summary>
+    /// EventTraceHeader structure used by EVENT_TRACE_PROPERTIES
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct WNODE_HEADER
+    {
+        public UInt32 BufferSize;
+        public UInt32 ProviderId;
+        public UInt64 HistoricalContext;
+        public UInt64 TimeStamp;
+        public Guid Guid;
+        public UInt32 ClientContext;  // Determines the time stamp resolution
+        public UInt32 Flags;
+    }
+
+    /// <summary>
+    /// EVENT_TRACE_PROPERTIES is a structure used by StartTrace, ControlTrace
+    /// however it can not be used directly in the definition of these functions
+    /// because extra information has to be hung off the end of the structure
+    /// before being passed.  (LofFileNameOffset, LoggerNameOffset)
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct EVENT_TRACE_PROPERTIES
+    {
+        public WNODE_HEADER Wnode;      // Timer Resolution determined by the Wnode.ClientContext.  
+        public UInt32 BufferSize;
+        public UInt32 MinimumBuffers;
+        public UInt32 MaximumBuffers;
+        public UInt32 MaximumFileSize;
+        public UInt32 LogFileMode;
+        public UInt32 FlushTimer;
+        public UInt32 EnableFlags;
+        public Int32 AgeLimit;
+        public UInt32 NumberOfBuffers;
+        public UInt32 FreeBuffers;
+        public UInt32 EventsLost;
+        public UInt32 BuffersWritten;
+        public UInt32 LogBuffersLost;
+        public UInt32 RealTimeBuffersLost;
+        public IntPtr LoggerThreadId;
+        public UInt32 LogFileNameOffset;
+        public UInt32 LoggerNameOffset;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    internal unsafe struct EVENT_FILTER_DESCRIPTOR
+    {
+        [FieldOffset(0)]
+        public byte* Ptr;          // Data
+        [FieldOffset(8)]
+        public int Size;
+        [FieldOffset(12)]
+        public int Type;        // Can be user defined, but also the EVENT_FILTER_TYPE* constants above.  
+    };
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal unsafe struct ENABLE_TRACE_PARAMETERS
+    {
+        public uint Version;
+        public uint EnableProperty;
+        public uint ControlFlags;
+        public Guid SourceId;
+        public EVENT_FILTER_DESCRIPTOR* EnableFilterDesc;
+        public int FilterDescCount;        // Only used for V2 (Win 8.1)
     };
 }

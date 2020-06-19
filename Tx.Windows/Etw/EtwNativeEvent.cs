@@ -3,6 +3,7 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
+using Tx.Windows.Etw;
 
 namespace Tx.Windows
 {
@@ -54,7 +55,7 @@ namespace Tx.Windows
         {
             get
             {
-                if ((record->EventHeader.Flags & EtwNativeMethods.EVENT_HEADER_FLAG_PROCESSOR_INDEX) != 0)
+                if ((record->EventHeader.Flags & EtwNativeConstants.EVENT_HEADER_FLAG_PROCESSOR_INDEX) != 0)
                 {
                     return record->BufferContext.ProcessorIndex;
                 }
@@ -240,7 +241,7 @@ namespace Tx.Windows
 
         public ulong ReadPointer()
         {
-            if ((Flags & EtwNativeMethods.EVENT_HEADER_FLAG_32_BIT_HEADER) != 0)
+            if ((Flags & EtwNativeConstants.EVENT_HEADER_FLAG_32_BIT_HEADER) != 0)
             {
                 return ReadUInt32();
             }

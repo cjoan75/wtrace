@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Threading;
+using Tx.Windows.Etw;
 
 namespace Tx.Windows
 {
@@ -37,7 +38,7 @@ namespace Tx.Windows
             _observer = observer;
             _logFile = new EVENT_TRACE_LOGFILE
                 {
-                    ProcessTraceMode = EtwNativeMethods.TraceModeRealTime | EtwNativeMethods.TraceModeEventRecord,
+                    ProcessTraceMode = EtwNativeConstants.TraceModeRealTime | EtwNativeConstants.TraceModeEventRecord,
                     LoggerName = sessionName,
                     EventRecordCallback = EtwCallback
                 };
@@ -66,10 +67,10 @@ namespace Tx.Windows
 
             _handle = EtwNativeMethods.OpenTrace(ref _logFile);
 
-            if (_handle == EtwNativeMethods.InvalidHandle)
+            if (_handle == EtwNativeConstants.InvalidHandle)
             {
                 error = Marshal.GetLastWin32Error();
-                if (error == EtwNativeMethods.ErrorNotFound)
+                if (error == EtwNativeConstants.ErrorNotFound)
                 {
                     _observer.OnError(new Exception("Could not find ETW real-time session " + _logFile.LoggerName));
                     return;
