@@ -38,6 +38,11 @@ namespace Tx.Windows.Etw
         public bool IsRealTime { get { return string.IsNullOrEmpty(FileName); } }
     }
 
+    public sealed class EtwProviderSessionConfig
+    {
+
+    }
+
     public sealed class EtwSession
     {
         public EtwSession(ulong traceHandle, EtwSessionConfig config)
@@ -74,6 +79,13 @@ namespace Tx.Windows.Etw
             var properties = GetProperties(buffer, session.Config);
             EtwNativeMethods.ControlTrace(0UL, session.Config.Name, properties, 
                 EtwNativeConstants.EVENT_TRACE_CONTROL_STOP).CheckError();
+        }
+
+        public static void EnableProvider(EtwProviderSessionConfig providerConfig)
+        {
+            var parameters = new ENABLE_TRACE_PARAMETERS() {
+                Version = EtwNativeConstants.ENABLE_TRACE_PARAMETERS_VERSION_2
+            }
         }
 
         /// <summary>

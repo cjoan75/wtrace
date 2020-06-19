@@ -48,6 +48,8 @@ namespace Tx.Windows.Etw
         internal const uint WNODE_FLAG_TRACED_GUID = 0x00020000;
         internal const uint EVENT_TRACE_SYSTEM_LOGGER_MODE = 0x02000000;
 
-
+        // Values for ENABLE_TRACE_PARAMETERS.Version
+        internal const uint ENABLE_TRACE_PARAMETERS_VERSION = 1;
+        internal const uint ENABLE_TRACE_PARAMETERS_VERSION_2 = 2;      // Introduced in Windows 8.1 
     }
 }

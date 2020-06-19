@@ -441,6 +441,6 @@ namespace Tx.Windows
         public uint ControlFlags;
         public Guid SourceId;
         public EVENT_FILTER_DESCRIPTOR* EnableFilterDesc;
-        public int FilterDescCount;        // Only used for V2 (Win 8.1)
+        public int FilterDescCount;        // according to docs Win7 should have it although PerfView says it's for Win 8.1+
     };
 }
