@@ -443,4 +443,38 @@ namespace Tx.Windows
         public EVENT_FILTER_DESCRIPTOR* EnableFilterDesc;
         public int FilterDescCount;        // according to docs Win7 should have it although PerfView says it's for Win 8.1+
     };
+
+    internal enum TRACE_INFO_CLASS
+    {
+        TraceGuidQueryList,                     // Get Guids of all providers registered on the computer
+        TraceGuidQueryInfo,                     // Query information that each session a particular provider.  
+        TraceGuidQueryProcess,                  // Query an array of GUIDs of the providers that registered themselves in the same process as the calling process
+        TraceStackTracingInfo,                  // This is the last one supported on Win7
+                                                // Win 8 
+        TraceSystemTraceEnableFlagsInfo,        // Turns on kernel event logger
+        TraceSampledProfileIntervalInfo,        // TRACE_PROFILE_INTERVAL (allows you to set the sampling interval) (Set, Get)
+
+        TraceProfileSourceConfigInfo,           // int array, turns on all listed sources.  (Set)
+        TraceProfileSourceListInfo,             // PROFILE_SOURCE_INFO linked list (converts names to source numbers) (Get)
+
+        // Used to collect extra info on other events (currently only context switch).  
+        TracePmcEventListInfo,                  // CLASSIC_EVENT_ID array (Works like TraceStackTracingInfo)
+        TracePmcCounterListInfo,                // int array
+        MaxTraceSetInfoClass
+    };
+
+	public struct STACK_TRACING_EVENT_ID
+	{
+		public Guid EventGuid;
+
+		public byte Type;
+
+		private byte Reserved1;
+		private byte Reserved2;
+		private byte Reserved3;
+		private byte Reserved4;
+		private byte Reserved5;
+		private byte Reserved6;
+		private byte Reserved7;
+	}
 }

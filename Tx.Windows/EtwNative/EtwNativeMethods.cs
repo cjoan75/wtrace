@@ -81,5 +81,20 @@ namespace Tx.Windows
            IntPtr pMapName,
            [Out] IntPtr eventMapInfoPtr,
            ref Int32 BufferSize);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        internal static extern int TraceSetInformation(
+            [In] UInt64 traceHandle,
+            [In] TRACE_INFO_CLASS InformationClass,
+            [In] void* TraceInformation,
+            [In] int InformationLength);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        internal static extern int TraceQueryInformation(
+            [In] UInt64 traceHandle,
+            [In] TRACE_INFO_CLASS InformationClass,
+            [Out] void* TraceInformation,
+            [In] int InformationLength,
+            [In][Out] ref int ReturnLength);
     }
 }

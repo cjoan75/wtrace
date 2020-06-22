@@ -15,13 +15,18 @@ namespace Tx.Windows.Etw
             }
         }
 
-        public static void CheckError(this int err)
+        public static void CheckWinError(this int err)
         {
             if (err != ERROR_SUCCESS)
             {
                 throw new Win32Exception(err);
             }
         }
+
+        //public static void CheckHResult(this int hr)
+        //{
+        //    Marshal.ThrowExceptionForHR(TraceEventNativeMethods.GetHRFromWin32(hr));
+        //}
 
         [DllImport("kernel32.dll", EntryPoint = "RtlZeroMemory")]
         public unsafe static extern void ZeroMemory(byte* destination, int length);

@@ -51,5 +51,23 @@ namespace Tx.Windows.Etw
         // Values for ENABLE_TRACE_PARAMETERS.Version
         internal const uint ENABLE_TRACE_PARAMETERS_VERSION = 1;
         internal const uint ENABLE_TRACE_PARAMETERS_VERSION_2 = 2;      // Introduced in Windows 8.1 
+
+        // Values for ENABLE_TRACE_PARAMETERS.EnableProperty
+        internal const uint EVENT_ENABLE_PROPERTY_SID = 0x00000001;
+        internal const uint EVENT_ENABLE_PROPERTY_TS_ID = 0x00000002;
+        internal const uint EVENT_ENABLE_PROPERTY_STACK_TRACE = 0x00000004;
+        internal const uint EVENT_ENABLE_PROPERTY_PSM_KEY = 0x00000008;
+        internal const uint EVENT_ENABLE_PROPERTY_IGNORE_KEYWORD_0 = 0x00000010;
+        internal const uint EVENT_ENABLE_PROPERTY_PROVIDER_GROUP = 0x00000020;
+        internal const uint EVENT_ENABLE_PROPERTY_ENABLE_KEYWORD_0 = 0x00000040;
+        // FIXME: this one is super interesting as it allows to uniquely identity 
+        // processes
+        internal const uint EVENT_ENABLE_PROPERTY_PROCESS_START_KEY = 0x00000080;
+        internal const uint EVENT_ENABLE_PROPERTY_EVENT_KEY = 0x00000100;
+        internal const uint EVENT_ENABLE_PROPERTY_EXCLUDE_INPRIVATE = 0x00000200;
+
+        internal const uint EVENT_CONTROL_CODE_DISABLE_PROVIDER = 0;
+        internal const uint EVENT_CONTROL_CODE_ENABLE_PROVIDER = 1;
+        internal const uint EVENT_CONTROL_CODE_CAPTURE_STATE = 2;
     }
 }
