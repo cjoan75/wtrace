@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFrameworks>netcoreapp3.1;net472</TargetFrameworks>
+    <OutputPath>..\bin\deps</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\wtrace.cmd\wtrace.cmd.fsproj" />
+    <ProjectReference Include="..\wtrace.lib\wtrace.lib.fsproj" />
+  </ItemGroup>
+
+</Project>
