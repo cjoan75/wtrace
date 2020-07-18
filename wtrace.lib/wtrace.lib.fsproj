@@ -2,13 +2,22 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Authors>Sebastian Solnica</Authors>
+    <Company>Sebastian Solnica (lowleveldesign.org)</Company>
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="Commons\Models.fs" />
+    <Compile Include="Commons\ResultBuilder.fs" />
+    <Compile Include="Commons\Globals.fs" />
+    <Compile Include="Storage\EventsDb.fs" />
+    <Compile Include="Events\FileIoEtwHandler.fs" />
     <Compile Include="TraceSession.fs" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="FSharp.Control.Reactive" Version="4.4.2" />
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="2.0.57" />
   </ItemGroup>
 

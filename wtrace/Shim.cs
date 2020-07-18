@@ -6,11 +6,11 @@ namespace LowLevelDesign.WTrace
     class Shim
     {
         [STAThread()]
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
             Unpack();
 
-            DoMain(args);
+            return DoMain(args);
         }
 
         /// <summary>
@@ -23,9 +23,9 @@ namespace LowLevelDesign.WTrace
 
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        static void DoMain(string[] args)
+        static int DoMain(string[] args)
         {
-            Program.main(args);
+            return Program.main(args);
         }
     }
 }

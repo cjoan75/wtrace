@@ -2,11 +2,22 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <Authors>Sebastian Solnica</Authors>
+    <Company>Sebastian Solnica (lowleveldesign.org)</Company>
   </PropertyGroup>
 
   <ItemGroup>
     <Compile Include="CommandLine.fs" />
     <Compile Include="Program.fs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="2.0.57" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\wtrace.lib\wtrace.lib.fsproj" />
   </ItemGroup>
 
   <ItemGroup>
