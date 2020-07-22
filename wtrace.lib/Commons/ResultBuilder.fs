@@ -31,7 +31,7 @@ type ResultBuilder() =
         finally compensation()
 
     member __.Using(res:#IDisposable, body) =
-        __.TryFinally(body res, fun () -> match res with null -> () | disp -> disp.Dispose())
+        __.TryFinally(body res, fun () -> res.Dispose())
 
     member __.While(guard, f) =
         if not (guard()) then Ok () else

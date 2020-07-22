@@ -19,11 +19,14 @@ type FileIoEvent =
 | Skipped
 
 type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
+
+    let fileIOTaskGuid = Guid(int32(0x90cbdc39), int16(0x4a3e), int16(0x11d1), byte(0x84), byte(0xf4), byte(0x00), byte(0x00), byte(0xf8), byte(0x04), byte(0x64), byte(0xe3))
     
     let logger = TraceSource("WTrace.ETW.FileIO")
     
-    let subscription = sessionObservable |> Observable.subscribeObserver this
-    let subject = new Subjects.Subject<TraceEvent>()
+    let subscription = sessionObservable 
+                       |> Observable.subscribeObserver this
+    let subject = new Subjects.Subject<WTraceEvent>()
 
     // a state to keep information about the pending IO requests
     // FIXME: make sure we remove old events from time to time
@@ -52,14 +55,16 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
 
     // FIXME: what about DiskIOTraceData and DiskIOInitTraceData - do we need those?
     let toFileIoEvent (ev : EtwTraceEvent) = 
-        match ev with
-        | :? FileIOCreateTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-        | :? FileIODirEnumTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-        | :? FileIOInfoTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-        | :? FileIOOpEndTraceData as ev -> FileIoCompleted (ev.IrpPtr, ev)
-        | :? FileIOReadWriteTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-        | :? FileIOSimpleOpTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-        | _ -> Skipped
+        if ev.TaskGuid = fileIOTaskGuid then
+            match ev with
+            | :? FileIOCreateTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+            | :? FileIODirEnumTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+            | :? FileIOInfoTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+            | :? FileIOOpEndTraceData as ev -> FileIoCompleted (ev.IrpPtr, ev)
+            | :? FileIOReadWriteTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+            | :? FileIOSimpleOpTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+            | _ -> Skipped
+        else Skipped
 
     let getEventDetails (ev : EtwTraceEvent) = 
         let fileShareStr (fs : FileShare) =
@@ -102,7 +107,7 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
                 } |> Seq.filter Option.isSome |> Seq.map Option.get |> Seq.toArray
             let details = sprintf "Irp: 0x%X, FileObject: 0x%X, attributes: %s" ev.IrpPtr ev.FileObject attrStr
             (ev.FileName, details, fields)
-        | _ -> ("", "", Array.empty<TraceEventField>)
+        | _ -> ("", "", Array.empty<WTraceEventField>)
 
     interface IObserver<EtwTraceEvent> with
         member _.OnNext(ev) =
@@ -139,7 +144,7 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
 
         member _.OnCompleted() = subject.OnCompleted()
 
-    interface IDisposableObservable<TraceEvent> with
+    interface IDisposableObservable<WTraceEvent> with
         member _.Subscribe(o) =
             subject |> Observable.subscribeObserver o
 
@@ -156,6 +161,8 @@ type FileIoEtwHandler () =
 
         member _.KernelStackFlags with get() = NtKeywords.FileIO
 
+        member _.UserModeProviders with get() = Seq.empty<EtwProviderRegistration>
+
         member _.Observe(observable) =
-            new FileIoObservable(observable) :> IDisposableObservable<TraceEvent>
+            new FileIoObservable(observable) :> IDisposableObservable<WTraceEvent>
 

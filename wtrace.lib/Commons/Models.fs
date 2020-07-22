@@ -2,6 +2,7 @@
 
 open System
 open Microsoft.Diagnostics.Tracing.Parsers
+open System.Collections.Generic
 
 type EtwTraceEvent = Microsoft.Diagnostics.Tracing.TraceEvent
 
@@ -18,7 +19,7 @@ type EtwEventHeader = {
     EventLevel : int32
 }
 
-// this part should be understandable for the C# clients too
+(* this part should be understandable for the C# clients too *)
 
 type ValueType = 
 | Blob = 0
@@ -28,13 +29,13 @@ type ValueType =
 | HexNumber = 4
 | Address = 5
 
-type TraceEventField = {
+type WTraceEventField = {
     Name : string
     Type : ValueType
     Value : array<byte>
 }
 
-type TraceEvent = {
+type WTraceEvent = {
     EventIndex : uint32
     TimeStampRelativeMSec : float
     TimeStampQPC : int64
@@ -48,24 +49,33 @@ type TraceEvent = {
     Path : string
     Details : string
     Result : string
-    Fields : array<TraceEventField>
+    Fields : array<WTraceEventField>
 }
-
-type TraceCallstack = {
-    EventIndex : uint32 // points to the event which "owns" the stack
-    ProcessId : int32
-    ThreadId : int32
-}
-
 
 type IDisposableObservable<'T> =
     inherit IObservable<'T>
     inherit IDisposable
+
+type EtwProviderRegistration = {
+    Id : Guid
+    Keywords : uint64
+}
 
 type ITraceEtwHandler = 
     abstract member KernelFlags : NtKeywords
 
     abstract member KernelStackFlags : NtKeywords
 
-    abstract member Observe : IObservable<EtwTraceEvent> -> IDisposableObservable<TraceEvent>
+    abstract member UserModeProviders : IEnumerable<EtwProviderRegistration>
+
+    abstract member Observe : IObservable<EtwTraceEvent> -> IDisposableObservable<WTraceEvent>
+
+(* end of the C# understandable part *)
+
+
+type TraceCallstack = {
+    EventIndex : uint32 // points to the event which "owns" the stack
+    ProcessId : int32
+    ThreadId : int32
+}
 

@@ -34,6 +34,6 @@ let parseArgs (flags : seq<string>) (args : seq<string>) =
                     else if sv.Length > 0 then ("", v) else (sn, v)) ("", "")
     |> Seq.skip 1
     |> Seq.groupBy (fun (n, _) -> n)
-    |> Seq.map (fun (n, s) -> (n, s |> Seq.map (fun (_, v) -> v) |> Seq.filter (fun i -> i.Length > 0)))
+    |> Seq.map (fun (n, s) -> (n, s |> Seq.map (fun (_, v) -> v) |> Seq.filter (fun i -> i.Length > 0) |> Seq.toList))
     |> Map.ofSeq
 
