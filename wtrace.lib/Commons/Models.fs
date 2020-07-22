@@ -3,6 +3,7 @@
 open System
 open Microsoft.Diagnostics.Tracing.Parsers
 open System.Collections.Generic
+open Microsoft.Diagnostics.Tracing
 
 type EtwTraceEvent = Microsoft.Diagnostics.Tracing.TraceEvent
 
@@ -19,7 +20,7 @@ type EtwEventHeader = {
     EventLevel : int32
 }
 
-(* this part should be understandable for the C# clients too *)
+(* FUTURE: this part should be understandable for the C# clients too *)
 
 type ValueType = 
 | Blob = 0
@@ -68,7 +69,7 @@ type ITraceEtwHandler =
 
     abstract member UserModeProviders : IEnumerable<EtwProviderRegistration>
 
-    abstract member Observe : IObservable<EtwTraceEvent> -> IDisposableObservable<WTraceEvent>
+    abstract member Observe : TraceEventSource -> Predicate<EtwTraceEvent> -> IDisposableObservable<WTraceEvent>
 
 (* end of the C# understandable part *)
 

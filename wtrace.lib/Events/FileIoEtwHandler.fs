@@ -4,12 +4,14 @@ open System
 open System.Collections.Generic
 open System.IO
 open System.Diagnostics
+open System.Reactive
 open System.Text
 open System.Reactive.Subjects
 open FSharp.Control.Reactive
+open Microsoft.Diagnostics.Tracing
+open Microsoft.Diagnostics.Tracing.Parsers
 open Microsoft.Diagnostics.Tracing.Parsers.Kernel
 open LowLevelDesign.WTrace
-open System.Reactive
 
 #nowarn "44" // disable the deprecation warning as we want to use TimeStampQPC
 
@@ -18,13 +20,21 @@ type FileIoEvent =
 | FileIoCompleted of IrpPtr : uint64 * Event : FileIOOpEndTraceData
 | Skipped
 
-type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
+type FileIoObservable (traceSource : TraceEventSource, filter : Predicate<EtwTraceEvent>) as this =
 
     let fileIOTaskGuid = Guid(int32(0x90cbdc39), int16(0x4a3e), int16(0x11d1), byte(0x84), byte(0xf4), byte(0x00), byte(0x00), byte(0xf8), byte(0x04), byte(0x64), byte(0xe3))
     
     let logger = TraceSource("WTrace.ETW.FileIO")
     
-    let subscription = sessionObservable 
+    let eventFilter (prn : string) (evn : string) =
+        if not (String.Equals(prn, KernelTraceEventParser.ProviderName, StringComparison.Ordinal)) then
+            EventFilterResponse.RejectProvider
+        elif (evn.StartsWith("FileIO/", StringComparison.Ordinal)) then
+            EventFilterResponse.AcceptEvent
+        else
+            EventFilterResponse.RejectEvent
+
+    let subscription = traceSource.Kernel.Observe(eventFilter) 
                        |> Observable.subscribeObserver this
     let subject = new Subjects.Subject<WTraceEvent>()
 
@@ -55,16 +65,15 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
 
     // FIXME: what about DiskIOTraceData and DiskIOInitTraceData - do we need those?
     let toFileIoEvent (ev : EtwTraceEvent) = 
-        if ev.TaskGuid = fileIOTaskGuid then
-            match ev with
-            | :? FileIOCreateTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-            | :? FileIODirEnumTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-            | :? FileIOInfoTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-            | :? FileIOOpEndTraceData as ev -> FileIoCompleted (ev.IrpPtr, ev)
-            | :? FileIOReadWriteTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-            | :? FileIOSimpleOpTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
-            | _ -> Skipped
-        else Skipped
+        assert (ev.TaskGuid = fileIOTaskGuid)
+        match ev with
+        | :? FileIOCreateTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+        | :? FileIODirEnumTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+        | :? FileIOInfoTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+        | :? FileIOOpEndTraceData as ev -> FileIoCompleted (ev.IrpPtr, ev)
+        | :? FileIOReadWriteTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+        | :? FileIOSimpleOpTraceData as ev -> FileIoPending (ev.IrpPtr, ev)
+        | _ -> Skipped
 
     let getEventDetails (ev : EtwTraceEvent) = 
         let fileShareStr (fs : FileShare) =
@@ -106,39 +115,41 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
                     Some { Name = nameof ev.FileAttributes; Type = ValueType.String; Value = Encoding.UTF8.GetBytes(attrStr) }
                 } |> Seq.filter Option.isSome |> Seq.map Option.get |> Seq.toArray
             let details = sprintf "Irp: 0x%X, FileObject: 0x%X, attributes: %s" ev.IrpPtr ev.FileObject attrStr
+
             (ev.FileName, details, fields)
         | _ -> ("", "", Array.empty<WTraceEventField>)
 
     interface IObserver<EtwTraceEvent> with
         member _.OnNext(ev) =
-            match toFileIoEvent ev with
-            | FileIoPending (irp, ev) ->
-                state.Add(irp, ev)
-            | FileIoCompleted (irp, ev) ->
-                match state.TryGetValue(irp) with
-                | true, prevEvent -> 
-                    state.Remove(irp) |> ignore
-                    let path, details, fields = getEventDetails prevEvent
-                    let ev = {
-                        EventIndex = uint32 prevEvent.EventIndex
-                        TimeStampRelativeMSec = prevEvent.TimeStampRelativeMSec
-                        TimeStampQPC = prevEvent.TimeStampQPC
-                        DurationMSec = ev.TimeStampRelativeMSec - prevEvent.TimeStampRelativeMSec
-                        ProcessId = prevEvent.ProcessID
-                        ProcessName = prevEvent.ProcessName
-                        ThreadId = prevEvent.ThreadID
-                        TaskName = prevEvent.TaskName
-                        OpcodeName = prevEvent.OpcodeName
-                        EventLevel = int32 prevEvent.Level
-                        Path = path
-                        Details = details
-                        Result = ev.NtStatus.ToString() // FIXME - provider nice name for status
-                        Fields = fields
-                    }
-                    subject.OnNext(ev)
-                | false, _ -> 
-                        logger.TraceWarning(sprintf "missing past event for IRP: 0x%X" irp)
-            | _ -> () // skip all unknown events
+            if filter.Invoke(ev) then
+                match toFileIoEvent ev with
+                | FileIoPending (irp, ev) ->
+                    state.Add(irp, ev)
+                | FileIoCompleted (irp, ev) ->
+                    match state.TryGetValue(irp) with
+                    | true, prevEvent -> 
+                        state.Remove(irp) |> ignore
+                        let path, details, fields = getEventDetails prevEvent
+                        let ev = {
+                            EventIndex = uint32 prevEvent.EventIndex
+                            TimeStampRelativeMSec = prevEvent.TimeStampRelativeMSec
+                            TimeStampQPC = prevEvent.TimeStampQPC
+                            DurationMSec = ev.TimeStampRelativeMSec - prevEvent.TimeStampRelativeMSec
+                            ProcessId = prevEvent.ProcessID
+                            ProcessName = prevEvent.ProcessName
+                            ThreadId = prevEvent.ThreadID
+                            TaskName = prevEvent.TaskName
+                            OpcodeName = prevEvent.OpcodeName
+                            EventLevel = int32 prevEvent.Level
+                            Path = path
+                            Details = details
+                            Result = ev.NtStatus.ToString() // FIXME - provider nice name for status
+                            Fields = fields
+                        }
+                        subject.OnNext(ev)
+                    | false, _ -> 
+                            logger.TraceWarning(sprintf "missing past event for IRP: 0x%X" irp)
+                | _ -> () // skip all unknown events
 
         member _.OnError(ex) = subject.OnError(ex)
 
@@ -163,6 +174,6 @@ type FileIoEtwHandler () =
 
         member _.UserModeProviders with get() = Seq.empty<EtwProviderRegistration>
 
-        member _.Observe(observable) =
-            new FileIoObservable(observable) :> IDisposableObservable<WTraceEvent>
+        member _.Observe traceSource filter =
+            new FileIoObservable(traceSource, filter) :> IDisposableObservable<WTraceEvent>
 

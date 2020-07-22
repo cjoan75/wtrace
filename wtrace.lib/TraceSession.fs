@@ -34,7 +34,7 @@ type TraceSessionControl (sessionFilter) =
 
     member _.EtwHandlers = etwHandlers
 
-    member _.EtwEventFilter = etwEventFilter
+    member _.EtwEventFilter = Predicate(etwEventFilter) // FIXME: isn't this leaking or creating Predicates each time when accessed
 
     member _.CancellationToken = cts.Token
 
@@ -77,21 +77,14 @@ module TraceSession =
             traceSession.EnableProvider(providerId, traceEventLevel, keywords, traceEventOptions) |> ignore
         )
 
-        // FIXME: maybe I can make it nicer - CreateFromTraceEventSession enables
-        // kernel provider so must be run after the EnableKernelProvider call
+        // CreateFromTraceEventSession enables kernel provider so must be run after 
+        // the EnableKernelProvider call
         use traceLogSource = TraceLog.CreateFromTraceEventSession(traceSession)
 
 
-        // we will use a Subject as the default TraceEventSubscription clones the ETW event. As we want it
-        // to happen only once per event, we will publish events.
-        use etwbroadcast = new Subjects.Subject<EtwTraceEvent>()
-
+        // FIXME: we need to pass filters to the observables
         // collect observables for all the ETW handlers
-        let observables = etwHandlers |> Array.map (fun h -> h.Observe(etwbroadcast))
-
-        use _etwSubscription = traceLogSource.ObserveAll() 
-                               |> Observable.filter sessionControl.EtwEventFilter
-                               |> Observable.subscribeObserver etwbroadcast
+        let observables = etwHandlers |> Array.map (fun h -> h.Observe traceLogSource sessionControl.EtwEventFilter)
 
         // we will merge and broadcast events from all the handlers
         use _broadcastSubscription = observables |> Array.map(fun o -> o :> IObservable<_>)
