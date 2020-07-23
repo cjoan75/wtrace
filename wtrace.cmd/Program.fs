@@ -7,6 +7,7 @@ open System.Reflection
 open System.Threading
 open Microsoft.FSharp.Linq
 open Microsoft.Diagnostics.Tracing.Session
+open FSharp.Control.Reactive
 open PInvoke
 open System.Runtime.InteropServices
 
@@ -145,7 +146,9 @@ let start args = result {
 
     // subscribe to WTrace events
     // FIXME
-    use _subs = traceSessionControl.Broadcast |> Observable.subscribe (fun ev -> printfn "%s/%s: '%s' '%s' result: %s" ev.TaskName ev.OpcodeName ev.Path ev.Details ev.Result)
+    use _subs = traceSessionControl.EventsBroadcast 
+                |> Observable.subscribe (fun ev -> printfn "%s/%s: '%s' '%s' result: %s" ev.Event.TaskName 
+                                                       ev.Event.OpcodeName ev.Event.Path ev.Event.Details ev.Event.Result)
    
     traceSessionControl
     |> TraceSession.StartProcessingEvents

@@ -20,7 +20,7 @@ type TraceSessionFilter =
 
 type TraceSessionControl (sessionFilter, enableStacks : bool) =
 
-    let broadcast = new Subjects.Subject<WTraceEvent>()
+    let eventsBroadcast = new Subjects.Subject<WTraceEventWithFields>()
     let cts = new CancellationTokenSource()
 
     member _.EtwHandlers : array<ITraceEtwHandler> = 
@@ -34,13 +34,13 @@ type TraceSessionControl (sessionFilter, enableStacks : bool) =
 
     member _.CancellationToken = cts.Token
 
-    member _.Broadcast = broadcast
+    member _.EventsBroadcast = eventsBroadcast
 
     member _.StopSession() = cts.Cancel()
 
     interface IDisposable with
         member _.Dispose() =
-            broadcast.Dispose()
+            eventsBroadcast.Dispose()
             cts.Dispose()
 
 
@@ -95,7 +95,7 @@ module TraceSession =
             // enable custom mode providers
             let traceEventLevel = TraceEventLevel.Always
             let traceEventOptions = TraceEventProviderOptions(StacksEnabled = sessionControl.EnableStacks)
-            // FIXME: traceEventOptions.ProcessIDFilter
+            // CHECKME: traceEventOptions.ProcessIDFilter - more efficient filtering for SingleProcess
 
             customProvidersById 
             |> Seq.map (fun (providerId, registrations) -> (providerId, registrations |> Seq.fold (fun k reg -> k ||| reg.Keywords) 0UL))
@@ -166,16 +166,18 @@ module TraceSession =
         // we will merge and broadcast events from all the handlers
         use _broadcastSubscription = observables |> Array.map(fun o -> o :> IObservable<_>)
                                      |> Observable.mergeArray 
-                                     |> Observable.subscribeObserver sessionControl.Broadcast
+                                     |> Observable.subscribeObserver sessionControl.EventsBroadcast
 
         traceLogSource.Process() |> ignore
         
-        sessionControl.Broadcast.OnCompleted()
+        sessionControl.EventsBroadcast.OnCompleted()
 
         observables |> Seq.iter (fun o -> o.Dispose())
 
         match processFilter with
         | ProcessTree tree -> (tree :> IDisposable).Dispose()
         | _ -> ()
+
+        // FIXME: here we will need to transmit some meta events (call stacks etc.)
     }
 

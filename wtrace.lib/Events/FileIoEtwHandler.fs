@@ -22,11 +22,11 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
     let encodingUTF8 = System.Text.Encoding.UTF8
 
     let fileIOTaskGuid = Guid(int32(0x90cbdc39), int16(0x4a3e), int16(0x11d1), byte(0x84), byte(0xf4), byte(0x00), byte(0x00), byte(0xf8), byte(0x04), byte(0x64), byte(0xe3))
-    
+ 
     let logger = TraceSource("WTrace.ETW.FileIO")
-    
+
     let subscription = sessionObservable |> Observable.subscribeObserver this
-    let subject = new Subjects.Subject<WTraceEvent>()
+    let subject = new Subjects.Subject<WTraceEventWithFields>()
 
     // a state to keep information about the pending IO requests
     // FIXME: make sure we remove old events from time to time
@@ -72,18 +72,19 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
                 (FileAttributes.Temporary, ":TMP")
             } |> Seq.fold (fun b (a, str) -> if int32(attr &&& a) <> 0 then b + str else b) ""
 
+        let evind = uint32 ev.EventIndex
         let path, details, fields = 
             match ev with
             | :? FileIOCreateTraceData as ev ->
                 let attrStr = fileAttrStr ev.FileAttributes
                 let fields = 
                     [|
-                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
                         // CHECKME (nameof ev.CreateOptions) - not sure how to print it
-                        { Name = nameof ev.CreateDispostion; Type = ValueType.String; Value = encodingUTF8.GetBytes(ev.CreateDispostion.ToString()) }
-                        { Name = nameof ev.ShareAccess; Type = ValueType.String; Value = encodingUTF8.GetBytes(fileShareStr ev.ShareAccess) }
-                        { Name = nameof ev.FileAttributes; Type = ValueType.String; Value = encodingUTF8.GetBytes(attrStr) }
+                        { EventIndex = evind; Name = nameof ev.CreateDispostion; Type = ValueType.String; Value = encodingUTF8.GetBytes(ev.CreateDispostion.ToString()) }
+                        { EventIndex = evind; Name = nameof ev.ShareAccess; Type = ValueType.String; Value = encodingUTF8.GetBytes(fileShareStr ev.ShareAccess) }
+                        { EventIndex = evind; Name = nameof ev.FileAttributes; Type = ValueType.String; Value = encodingUTF8.GetBytes(attrStr) }
                     |]
                 let details = sprintf "IRP: 0x%X, attributes: %s" ev.IrpPtr attrStr
                 (ev.FileName, details, fields)
@@ -91,58 +92,60 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
                 let details = sprintf "Directory: '%s', FileIndex: %d, IRP: 0x%X" ev.DirectoryName ev.FileIndex ev.IrpPtr
                 let fields =
                     [|
-                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
-                        { Name = nameof ev.DirectoryName; Type = ValueType.String; Value = encodingUTF8.GetBytes(ev.DirectoryName) }
-                        { Name = nameof ev.FileKey; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileKey) }
-                        { Name = nameof ev.FileIndex; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.FileIndex) }
+                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                        { EventIndex = evind; Name = nameof ev.DirectoryName; Type = ValueType.String; Value = encodingUTF8.GetBytes(ev.DirectoryName) }
+                        { EventIndex = evind; Name = nameof ev.FileKey; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileKey) }
+                        { EventIndex = evind; Name = nameof ev.FileIndex; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.FileIndex) }
                     |]
                 (ev.FileName, details, fields)
             | :? FileIOInfoTraceData as ev ->
                 let details = sprintf "IRP: 0x%X" ev.IrpPtr
                 let fields =
                     [|
-                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
                     |]
                 (ev.FileName, details, fields)
             | :? FileIOReadWriteTraceData as ev ->
                 let details = sprintf "IRP: 0x%X, offset: %d, I/O size: %d" ev.IrpPtr ev.Offset ev.IoSize
                 let fields =
                     [|
-                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
-                        { Name = nameof ev.IoSize; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.IoSize) }
-                        { Name = nameof ev.Offset; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.Offset) }
-                        { Name = nameof ev.IoFlags; Type = ValueType.HexNumber; Value = BitConverter.GetBytes(ev.IoFlags) }
-                        { Name = "Bytes"; Type = ValueType.Integer; Value = BitConverter.GetBytes(completion.ExtraInfo) }
+                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                        { EventIndex = evind; Name = nameof ev.IoSize; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.IoSize) }
+                        { EventIndex = evind; Name = nameof ev.Offset; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.Offset) }
+                        { EventIndex = evind; Name = nameof ev.IoFlags; Type = ValueType.HexNumber; Value = BitConverter.GetBytes(ev.IoFlags) }
+                        { EventIndex = evind; Name = "Bytes"; Type = ValueType.Integer; Value = BitConverter.GetBytes(completion.ExtraInfo) }
                     |]
                 (ev.FileName, details, fields)
             | :? FileIOSimpleOpTraceData as ev ->
                 let details = sprintf "IRP: 0x%X" ev.IrpPtr
                 let fields =
                     [|
-                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
                     |]
                 (ev.FileName, details, fields)
             | _ -> assert false; ("Invalid data", String.Empty, Array.empty<WTraceEventField>)
-            
+  
         {
-            EventIndex = uint32 ev.EventIndex
-            TimeStampRelativeMSec = ev.TimeStampRelativeMSec
-            TimeStampQPC = ev.TimeStampQPC
-            DurationMSec = completion.TimeStampRelativeMSec - ev.TimeStampRelativeMSec
-            ProcessId = ev.ProcessID
-            ProcessName = ev.ProcessName
-            ThreadId = ev.ThreadID
-            ProviderName = ev.ProviderName
-            TaskName = ev.TaskName
-            OpcodeName = ev.OpcodeName
-            EventLevel = int32 ev.Level
-            Path = path
-            Details = details
-            Result = Win32Error.GetName(typedefof<Win32Error>, completion.NtStatus) |? (sprintf "0x%X" completion.NtStatus)
+            Event = {
+                EventIndex = evind
+                TimeStampRelativeMSec = ev.TimeStampRelativeMSec
+                TimeStampQPC = ev.TimeStampQPC
+                DurationMSec = completion.TimeStampRelativeMSec - ev.TimeStampRelativeMSec
+                ProcessId = ev.ProcessID
+                ProcessName = ev.ProcessName
+                ThreadId = ev.ThreadID
+                ProviderName = ev.ProviderName
+                TaskName = ev.TaskName
+                OpcodeName = ev.OpcodeName
+                EventLevel = int32 ev.Level
+                Path = path
+                Details = details
+                Result = Win32Error.GetName(typedefof<Win32Error>, completion.NtStatus) |? (sprintf "0x%X" completion.NtStatus)
+            }
             Fields = fields
         }
 
@@ -165,7 +168,7 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
 
         member _.OnCompleted() = assert false // the ETW observables do not send the OnCompleted events
 
-    interface IDisposableObservable<WTraceEvent> with
+    interface IDisposableObservable<WTraceEventWithFields> with
         member _.Subscribe(o) =
             subject |> Observable.subscribeObserver o
 
@@ -186,5 +189,5 @@ type FileIoEtwHandler () =
         member _.UserModeProviders with get() = Seq.empty<EtwProviderRegistration>
 
         member _.Observe observable =
-            new FileIoObservable(observable) :> IDisposableObservable<WTraceEvent>
+            new FileIoObservable(observable) :> IDisposableObservable<WTraceEventWithFields>
 

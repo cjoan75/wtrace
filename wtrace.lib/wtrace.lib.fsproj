@@ -12,7 +12,7 @@
     <Compile Include="Commons\ResultBuilder.fs" />
     <Compile Include="Commons\Globals.fs" />
     <Compile Include="Commons\WinApi.fs" />
-    <Compile Include="Storage\EventsDb.fs" />
+    <Compile Include="Storage\EventStore.fs" />
     <Compile Include="Events\FileIoEtwHandler.fs" />
     <Compile Include="Events\IsrDpcEtwHandler.fs" />
     <Compile Include="TraceSession.fs" />
