@@ -5,11 +5,11 @@ open System.Collections.Generic
 open System.IO
 open System.Diagnostics
 open System.Reactive
-open System.Text
 open System.Reactive.Subjects
 open FSharp.Control.Reactive
 open Microsoft.Diagnostics.Tracing.Parsers.Kernel
 open LowLevelDesign.WTrace
+open LowLevelDesign.WTrace.WinApi
 
 #nowarn "44" // disable the deprecation warning as we want to use TimeStampQPC
 
@@ -19,6 +19,7 @@ type FileIoEvent =
 | Skipped
 
 type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
+    let encodingUTF8 = System.Text.Encoding.UTF8
 
     let fileIOTaskGuid = Guid(int32(0x90cbdc39), int16(0x4a3e), int16(0x11d1), byte(0x84), byte(0xf4), byte(0x00), byte(0x00), byte(0xf8), byte(0x04), byte(0x64), byte(0xe3))
     
@@ -31,28 +32,7 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
     // FIXME: make sure we remove old events from time to time
     let state = Dictionary<uint64, EtwTraceEvent>()
 
-    let getFieldInfo (ev : EtwTraceEvent) (fieldName, fieldType) =
-        let v = ev.PayloadByName(fieldName)
-        if v = null then None
-        else
-            try
-                match fieldType with
-                | ValueType.Integer -> 
-                    let b = BitConverter.GetBytes(Convert.ToInt64(v))
-                    Some { Name = fieldName; Type = fieldType; Value = b }
-                | ValueType.String ->
-                    let b = Encoding.UTF8.GetBytes(v.ToString())
-                    Some { Name = fieldName; Type = fieldType; Value = b }
-                | _ -> None
-            with
-            | :? InvalidCastException -> 
-                logger.TraceWarning(sprintf "invalid cast for field: '%s', event: '%s'" fieldName ev.EventName)
-                None
-            | :? OverflowException ->
-                logger.TraceWarning(sprintf "overflow for field: '%s', event: '%s'" fieldName ev.EventName)
-                None
-
-    // FIXME: what about DiskIOTraceData and DiskIOInitTraceData - do we need those?
+    // CHECKME: what about DiskIOTraceData and DiskIOInitTraceData - do we need those?
     let toFileIoEvent (ev : EtwTraceEvent) = 
         if ev.TaskGuid = fileIOTaskGuid then
             match ev with
@@ -65,7 +45,7 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
             | _ -> Skipped
         else Skipped
 
-    let getEventDetails (ev : EtwTraceEvent) = 
+    let createWTraceEvent (ev : EtwTraceEvent) (completion : FileIOOpEndTraceData) = 
         let fileShareStr (fs : FileShare) =
             if (fs &&& FileShare.ReadWrite &&& FileShare.Delete <> FileShare.None) then "rwd"
             elif (fs &&& FileShare.ReadWrite <> FileShare.None) then "rw-"
@@ -92,51 +72,91 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
                 (FileAttributes.Temporary, ":TMP")
             } |> Seq.fold (fun b (a, str) -> if int32(attr &&& a) <> 0 then b + str else b) ""
 
-        match ev with
-        | :? FileIOCreateTraceData as ev ->
-            let attrStr = fileAttrStr ev.FileAttributes
-            let fields = 
-                seq {
-                    (nameof ev.IrpPtr, ValueType.Address) |> getFieldInfo ev
-                    (nameof ev.FileObject, ValueType.Address) |> getFieldInfo ev
-                    // FIXME (nameof ev.CreateOptions) - not sure how to print it
-                    (nameof ev.CreateDispostion, ValueType.String) |> getFieldInfo ev
-                    Some { Name = nameof ev.ShareAccess; Type = ValueType.String; Value = Encoding.UTF8.GetBytes(fileShareStr ev.ShareAccess) }
-                    Some { Name = nameof ev.FileAttributes; Type = ValueType.String; Value = Encoding.UTF8.GetBytes(attrStr) }
-                } |> Seq.filter Option.isSome |> Seq.map Option.get |> Seq.toArray
-            let details = sprintf "Irp: 0x%X, FileObject: 0x%X, attributes: %s" ev.IrpPtr ev.FileObject attrStr
-
-            (ev.FileName, details, fields)
-        | _ -> ("", "", Array.empty<WTraceEventField>)
+        let path, details, fields = 
+            match ev with
+            | :? FileIOCreateTraceData as ev ->
+                let attrStr = fileAttrStr ev.FileAttributes
+                let fields = 
+                    [|
+                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                        // CHECKME (nameof ev.CreateOptions) - not sure how to print it
+                        { Name = nameof ev.CreateDispostion; Type = ValueType.String; Value = encodingUTF8.GetBytes(ev.CreateDispostion.ToString()) }
+                        { Name = nameof ev.ShareAccess; Type = ValueType.String; Value = encodingUTF8.GetBytes(fileShareStr ev.ShareAccess) }
+                        { Name = nameof ev.FileAttributes; Type = ValueType.String; Value = encodingUTF8.GetBytes(attrStr) }
+                    |]
+                let details = sprintf "IRP: 0x%X, attributes: %s" ev.IrpPtr attrStr
+                (ev.FileName, details, fields)
+            | :? FileIODirEnumTraceData as ev ->
+                let details = sprintf "Directory: '%s', FileIndex: %d, IRP: 0x%X" ev.DirectoryName ev.FileIndex ev.IrpPtr
+                let fields =
+                    [|
+                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                        { Name = nameof ev.DirectoryName; Type = ValueType.String; Value = encodingUTF8.GetBytes(ev.DirectoryName) }
+                        { Name = nameof ev.FileKey; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileKey) }
+                        { Name = nameof ev.FileIndex; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.FileIndex) }
+                    |]
+                (ev.FileName, details, fields)
+            | :? FileIOInfoTraceData as ev ->
+                let details = sprintf "IRP: 0x%X" ev.IrpPtr
+                let fields =
+                    [|
+                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                    |]
+                (ev.FileName, details, fields)
+            | :? FileIOReadWriteTraceData as ev ->
+                let details = sprintf "IRP: 0x%X, offset: %d, I/O size: %d" ev.IrpPtr ev.Offset ev.IoSize
+                let fields =
+                    [|
+                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                        { Name = nameof ev.IoSize; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.IoSize) }
+                        { Name = nameof ev.Offset; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.Offset) }
+                        { Name = nameof ev.IoFlags; Type = ValueType.HexNumber; Value = BitConverter.GetBytes(ev.IoFlags) }
+                        { Name = "Bytes"; Type = ValueType.Integer; Value = BitConverter.GetBytes(completion.ExtraInfo) }
+                    |]
+                (ev.FileName, details, fields)
+            | :? FileIOSimpleOpTraceData as ev ->
+                let details = sprintf "IRP: 0x%X" ev.IrpPtr
+                let fields =
+                    [|
+                        { Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
+                        { Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
+                    |]
+                (ev.FileName, details, fields)
+            | _ -> assert false; ("Invalid data", String.Empty, Array.empty<WTraceEventField>)
+            
+        {
+            EventIndex = uint32 ev.EventIndex
+            TimeStampRelativeMSec = ev.TimeStampRelativeMSec
+            TimeStampQPC = ev.TimeStampQPC
+            DurationMSec = completion.TimeStampRelativeMSec - ev.TimeStampRelativeMSec
+            ProcessId = ev.ProcessID
+            ProcessName = ev.ProcessName
+            ThreadId = ev.ThreadID
+            ProviderName = ev.ProviderName
+            TaskName = ev.TaskName
+            OpcodeName = ev.OpcodeName
+            EventLevel = int32 ev.Level
+            Path = path
+            Details = details
+            Result = Win32Error.GetName(typedefof<Win32Error>, completion.NtStatus) |? (sprintf "0x%X" completion.NtStatus)
+            Fields = fields
+        }
 
     interface IObserver<EtwTraceEvent> with
         member _.OnNext(ev) =
             match toFileIoEvent ev with
             | FileIoPending (irp, ev) ->
-                state.Add(irp, ev)
+                assert (not (state.ContainsKey(irp)))
+                state.[irp] <- ev
             | FileIoCompleted (irp, ev) ->
                 match state.TryGetValue(irp) with
                 | true, prevEvent -> 
                     state.Remove(irp) |> ignore
-                    let path, details, fields = getEventDetails prevEvent
-                    let ev = {
-                        EventIndex = uint32 prevEvent.EventIndex
-                        TimeStampRelativeMSec = prevEvent.TimeStampRelativeMSec
-                        TimeStampQPC = prevEvent.TimeStampQPC
-                        DurationMSec = ev.TimeStampRelativeMSec - prevEvent.TimeStampRelativeMSec
-                        ProcessId = prevEvent.ProcessID
-                        ProcessName = prevEvent.ProcessName
-                        ThreadId = prevEvent.ThreadID
-                        ProviderName = prevEvent.ProviderName
-                        TaskName = prevEvent.TaskName
-                        OpcodeName = prevEvent.OpcodeName
-                        EventLevel = int32 prevEvent.Level
-                        Path = path
-                        Details = details
-                        Result = ev.NtStatus.ToString() // FIXME - provider nice name for status
-                        Fields = fields
-                    }
-                    subject.OnNext(ev)
+                    subject.OnNext(createWTraceEvent prevEvent ev)
                 | false, _ -> 
                         logger.TraceWarning(sprintf "missing past event for IRP: 0x%X" irp)
             | _ -> () // skip all unknown events

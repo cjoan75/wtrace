@@ -145,7 +145,7 @@ let start args = result {
 
     // subscribe to WTrace events
     // FIXME
-    use _subs = traceSessionControl.Broadcast |> Observable.subscribe (fun ev -> printfn "%s/%s: '%s'" ev.TaskName ev.OpcodeName ev.Path)
+    use _subs = traceSessionControl.Broadcast |> Observable.subscribe (fun ev -> printfn "%s/%s: '%s' '%s' result: %s" ev.TaskName ev.OpcodeName ev.Path ev.Details ev.Result)
    
     traceSessionControl
     |> TraceSession.StartProcessingEvents

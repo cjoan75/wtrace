@@ -75,7 +75,6 @@ type ITraceEtwHandler =
 
 (* end of the C# understandable part *)
 
-
 type TraceCallstack = {
     EventIndex : uint32 // points to the event which "owns" the stack
     ProcessId : int32

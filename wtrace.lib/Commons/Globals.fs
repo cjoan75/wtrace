@@ -17,4 +17,8 @@ type TraceSource with
     member this.TraceWarningWithMessage (msg, ex : Exception) =
         this.TraceEvent(TraceEventType.Error, 0, sprintf "%s\nDETAILS: %s" msg (ex.ToString()))
 
+
 let result = ResultBuilder()
+
+
+let (|?) lhs rhs = (if lhs = null then rhs else lhs)
