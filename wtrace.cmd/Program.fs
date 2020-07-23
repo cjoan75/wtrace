@@ -20,6 +20,7 @@ type TraceOptions = {
     Target : TraceTarget
     NewConsole : bool
     NoSummary : bool
+    WithStacks : bool
 }
 
 let logger = new TraceSource("LowLevelDesign.WTrace")
@@ -56,7 +57,7 @@ let traceRunningProcess (pid) = result {
 
 (* Command line *)
 
-let flags = seq { "s"; "system"; "c"; "children"; "newconsole"; "nosummary"; "h"; "?"; "help" }
+let flags = seq { "s"; "system"; "c"; "children"; "newconsole"; "nosummary"; "withstacks"; "h"; "?"; "help" }
 
 let isFlagEnabled args flags = flags |> Seq.exists (fun f -> args |> Map.containsKey f)
 
@@ -78,6 +79,7 @@ let showHelp () =
     printfn "-c, --children        Collects traces from the selected process and all its children."
     printfn "--newconsole          Starts the process in a new console window."
     printfn "--nosummary           Prints only ETW events - no summary at the end."
+    printfn "--withstacks          Collects data required to resolve stacks (memory consumption is much higher)"
     printfn "-h, --help            Shows this message and exits."
     printfn ""
     // FIXME: save parameter and a parameter to resolve stacks
@@ -102,6 +104,7 @@ let parseCmdArgs args =
         Target = target
         NewConsole = Seq.singleton "newconsole" |> isFlagEnabled
         NoSummary = Seq.singleton "nosummary" |> isFlagEnabled
+        WithStacks = Seq.singleton "withstacks" |> isFlagEnabled
     }
 
 let checkElevated () = 
@@ -116,7 +119,6 @@ let start args = result {
     do! checkElevated ()
 
     // FIXME: create tracing session and assign Observables
-    // FIXME what to do with children?
     let! (filter, hProcess, resumeThread) = 
         match cmdArgs.Target with
         | NewProcess (args, c) -> result {
@@ -128,16 +130,18 @@ let start args = result {
                 else 
                     hThread.Close()
                     Ok ()
-            return (TraceSessionFilter.Process (pid, c), hProcess, resumeThread)
+            return if c then (TraceSessionFilter.ProcessWithChildren pid, hProcess, resumeThread)
+                   else (TraceSessionFilter.Process pid, hProcess, resumeThread)
           }
         | RunningProcess (pid, c) -> result {
             let! (pid, hProcess) = traceRunningProcess pid
-            return (TraceSessionFilter.Process (pid, c), hProcess, fun () -> Ok ())
+            return if c then (TraceSessionFilter.ProcessWithChildren pid, hProcess, fun () -> Ok ())
+                   else (TraceSessionFilter.Process pid, hProcess, fun () -> Ok ())
           }
-        | SystemOnly -> Ok (TraceSessionFilter.SystemOnly, InvalidHandle, fun () -> Ok ())
+        | SystemOnly -> Ok (TraceSessionFilter.KernelOnly, InvalidHandle, fun () -> Ok ())
         | _ -> Ok (TraceSessionFilter.Everything, InvalidHandle, fun () -> Ok ())
 
-    use traceSessionControl = new TraceSessionControl(filter)
+    use traceSessionControl = new TraceSessionControl(filter, cmdArgs.WithStacks)
 
     // subscribe to WTrace events
     // FIXME

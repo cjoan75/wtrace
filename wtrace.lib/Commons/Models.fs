@@ -44,6 +44,7 @@ type WTraceEvent = {
     ProcessId : int32
     ProcessName : string
     ThreadId : int32
+    ProviderName : string
     TaskName : string
     OpcodeName : string
     EventLevel : int32
@@ -60,6 +61,7 @@ type IDisposableObservable<'T> =
 type EtwProviderRegistration = {
     Id : Guid
     Keywords : uint64
+    RegisterParser : TraceEventSource -> IObservable<EtwTraceEvent>
 }
 
 type ITraceEtwHandler = 
@@ -69,7 +71,7 @@ type ITraceEtwHandler =
 
     abstract member UserModeProviders : IEnumerable<EtwProviderRegistration>
 
-    abstract member Observe : TraceEventSource -> Predicate<EtwTraceEvent> -> IDisposableObservable<WTraceEvent>
+    abstract member Observe : IObservable<EtwTraceEvent> -> IDisposableObservable<WTraceEvent>
 
 (* end of the C# understandable part *)
 

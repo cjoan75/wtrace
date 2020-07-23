@@ -9,32 +9,28 @@ open Microsoft.Diagnostics.Tracing.Session
 open Microsoft.Diagnostics.Tracing
 open LowLevelDesign.WTrace
 open LowLevelDesign.WTrace.Events
+open Microsoft.Diagnostics.Tracing.Parsers.Kernel
+open System.Collections.Generic
 
 type TraceSessionFilter = 
-| Process of Id : int32 * IncludeChildren : bool
-| SystemOnly
+| KernelOnly
+| Process of Id : int32
+| ProcessWithChildren of Id : int32
 | Everything
 
-type TraceSessionControl (sessionFilter) =
+type TraceSessionControl (sessionFilter, enableStacks : bool) =
 
     let broadcast = new Subjects.Subject<WTraceEvent>()
     let cts = new CancellationTokenSource()
 
-    // FIXME: I need to think how I should trace the ISR/DPC events
-    let etwHandlers : array<ITraceEtwHandler> = match sessionFilter with
-                                                | SystemOnly -> [| IsrDpcEtwHandler() |]
-                                                | _ -> [| FileIoEtwHandler() |]
+    member _.EtwHandlers : array<ITraceEtwHandler> = 
+        match sessionFilter with
+        | KernelOnly -> [| IsrDpcEtwHandler() |]
+        | _ -> [| FileIoEtwHandler() |]
 
-    // subscribe the ETW broadcast to the main ETW session - we pass all the events to the
-    // observables. They are responsible for rejecting events that does not interest them.
-    let etwEventFilter = match sessionFilter with
-                         | Process (pid, _) -> fun (ev : EtwTraceEvent) -> ev.ProcessID = pid // FIXME: children!!!
-                         | SystemOnly -> fun (ev : EtwTraceEvent) -> ev.TaskGuid = IsrDpcEtwHandler.TaskGuid
-                         | Everything -> fun _ -> true
+    member _.Filter = sessionFilter
 
-    member _.EtwHandlers = etwHandlers
-
-    member _.EtwEventFilter = Predicate(etwEventFilter) // FIXME: isn't this leaking or creating Predicates each time when accessed
+    member _.EnableStacks = enableStacks
 
     member _.CancellationToken = cts.Token
 
@@ -50,13 +46,76 @@ type TraceSessionControl (sessionFilter) =
 
 module TraceSession =
 
-    // It's a blocking call, to stop it cancel the CancellationToken
-    let StartProcessingEvents (sessionControl: TraceSessionControl) = async {
+    [<AutoOpen>]
+    module private Private =
+
+        type ProcessTree (traceSource : TraceEventSource, pid) =
+            // everything is synchronous so the hashset could be a regular hashset
+            let processes = HashSet<int32>()
+
+            let onProcessStartAction = 
+                Action<ProcessTraceData>(
+                    fun p -> if (processes.Contains(p.ParentID)) then processes.Add(p.ProcessID) |> ignore)
+            let onProcessStopAction = 
+                Action<ProcessTraceData>(
+                    fun p -> processes.Remove(p.ProcessID) |> ignore)
+
+            do
+                traceSource.Kernel.add_ProcessStart(onProcessStartAction)
+                traceSource.Kernel.add_ProcessStop(onProcessStopAction)
+
+                processes.Add(pid) |> ignore
+
+            member _.Contains pid = processes.Contains(pid)
+
+            interface IDisposable with
+                member _.Dispose() = 
+                    traceSource.Kernel.remove_ProcessStart(onProcessStartAction)
+                    traceSource.Kernel.remove_ProcessStop(onProcessStopAction)
+
+        type ProcessFilter =
+        | SingleProcess of int
+        | ProcessTree of ProcessTree
+        | AllProcesses
+
+        let registerCustomProviders (sessionControl : TraceSessionControl) (traceSession : TraceEventSession) filter =
+            let etwHandlers = sessionControl.EtwHandlers
+            let customProvidersById = etwHandlers |> Seq.collect (fun h -> h.UserModeProviders)
+                                                  |> Seq.groupBy (fun provider -> provider.Id)
+
+            // register custom parsers (only one by provider id) and create Observables
+            let customParsers = 
+                customProvidersById
+                |> Seq.map (fun (providerId, registrations) -> (providerId, registrations |> Seq.head))
+                |> Seq.map (fun (providerId, registration) -> 
+                                (providerId, registration.RegisterParser(traceSession.Source :> TraceEventSource)
+                                |> Observable.filter filter))
+                |> Map.ofSeq
+
+            // enable custom mode providers
+            let traceEventLevel = TraceEventLevel.Always
+            let traceEventOptions = TraceEventProviderOptions(StacksEnabled = sessionControl.EnableStacks)
+            // FIXME: traceEventOptions.ProcessIDFilter
+
+            customProvidersById 
+            |> Seq.map (fun (providerId, registrations) -> (providerId, registrations |> Seq.fold (fun k reg -> k ||| reg.Keywords) 0UL))
+            |> Seq.iter (fun (providerId, keywords) -> 
+                traceSession.EnableProvider(providerId, traceEventLevel, keywords, traceEventOptions) |> ignore
+            )
+
+            customParsers
+
+
+    // Starts the ETW session
+    let StartProcessingEvents (sessionControl : TraceSessionControl) = async {
         let etwHandlers = sessionControl.EtwHandlers
 
         let requiredKernelFlags = NtKeywords.Process ||| NtKeywords.Thread ||| NtKeywords.ImageLoad
         let kernelFlags = etwHandlers |> Seq.fold (fun flag hndlr -> flag ||| hndlr.KernelFlags) requiredKernelFlags
-        let kernelStackFlags = etwHandlers |> Seq.fold (fun flag hndlr -> flag ||| hndlr.KernelStackFlags) NtKeywords.None
+        let kernelStackFlags =
+            if sessionControl.EnableStacks then
+                etwHandlers |> Seq.fold (fun flag hndlr -> flag ||| hndlr.KernelStackFlags) NtKeywords.None
+            else NtKeywords.None
 
         use traceSession = new TraceEventSession("wtrace-rt")
 
@@ -64,27 +123,45 @@ module TraceSession =
 
         traceSession.EnableKernelProvider(kernelFlags, kernelStackFlags) |> ignore
 
-        // enable user mode providers
-        let traceEventLevel = TraceEventLevel.Always
-        let traceEventOptions = TraceEventProviderOptions()
-        // FIXME traceEventOptions.StacksEnabled
+        let processFilter = match sessionControl.Filter with
+                            | ProcessWithChildren pid -> ProcessTree (new ProcessTree(traceSession.Source, pid))
+                            | Process pid -> SingleProcess pid
+                            | _ -> AllProcesses
+        let observableFilter = match processFilter with
+                               | SingleProcess pid -> fun (ev : EtwTraceEvent) -> ev.ProcessID = pid
+                               | ProcessTree tree -> fun ev -> tree.Contains(ev.ProcessID)
+                               | _ -> fun _ -> true
 
-        etwHandlers 
-        |> Seq.collect (fun h -> h.UserModeProviders)
-        |> Seq.groupBy (fun provider -> provider.Id)
-        |> Seq.map (fun (providerId, keywordSeq) -> (providerId, keywordSeq |> Seq.fold (fun k curr -> k ||| curr.Keywords) 0UL))
-        |> Seq.iter (fun (providerId, keywords) -> 
-            traceSession.EnableProvider(providerId, traceEventLevel, keywords, traceEventOptions) |> ignore
-        )
+        // prepare custom providers and parsers
+        let customProviderBroadcasts = 
+            match sessionControl.Filter with
+            | KernelOnly -> Map.empty<Guid, IObservable<EtwTraceEvent>>
+            | _ -> registerCustomProviders sessionControl traceSession observableFilter
 
-        // CreateFromTraceEventSession enables kernel provider so must be run after 
-        // the EnableKernelProvider call
+        // CreateFromTraceEventSession enables kernel provider so must be run after the EnableKernelProvider call
         use traceLogSource = TraceLog.CreateFromTraceEventSession(traceSession)
 
+        use kernelBroadcast = new Subjects.Subject<EtwTraceEvent>()
+        use _kernelSub = traceLogSource.Kernel.Observe() 
+                         |> Observable.filter observableFilter
+                         |> Observable.subscribeObserver kernelBroadcast
 
-        // FIXME: we need to pass filters to the observables
         // collect observables for all the ETW handlers
-        let observables = etwHandlers |> Array.map (fun h -> h.Observe traceLogSource sessionControl.EtwEventFilter)
+        let observables = 
+            let createObservables (h : ITraceEtwHandler) = 
+                // subscribe a given observable to all its parsers
+                let customObservables =
+                    h.UserModeProviders 
+                    |> Seq.choose (fun p -> customProviderBroadcasts |> Map.tryFind p.Id)
+                    |> Seq.map (fun parser -> h.Observe parser)
+
+                if h.KernelFlags <> NtKeywords.None then 
+                    customObservables |> Seq.append (Seq.singleton (h.Observe kernelBroadcast))
+                else customObservables
+            
+            etwHandlers 
+            |> Seq.collect createObservables
+            |> Array.ofSeq
 
         // we will merge and broadcast events from all the handlers
         use _broadcastSubscription = observables |> Array.map(fun o -> o :> IObservable<_>)
@@ -93,8 +170,12 @@ module TraceSession =
 
         traceLogSource.Process() |> ignore
         
-        // FIXME: send OnComplete events
+        sessionControl.Broadcast.OnCompleted()
 
         observables |> Seq.iter (fun o -> o.Dispose())
+
+        match processFilter with
+        | ProcessTree tree -> (tree :> IDisposable).Dispose()
+        | _ -> ()
     }
 

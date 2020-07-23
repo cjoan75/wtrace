@@ -6,7 +6,7 @@ open FSharp.Control.Reactive
 open LowLevelDesign.WTrace
 open Microsoft.Diagnostics.Tracing
 
-type IsrDpcObservable (traceSource : TraceEventSource) =
+type IsrDpcObservable (sessionObservable : IObservable<EtwTraceEvent>) =
 
     // FIXME to implement
     let subject = new Subjects.Subject<WTraceEvent>()
@@ -30,6 +30,6 @@ type IsrDpcEtwHandler () =
 
         member _.UserModeProviders with get() = Seq.empty<EtwProviderRegistration>
 
-        member _.Observe traceSource _ =
-            new IsrDpcObservable(traceSource) :> IDisposableObservable<WTraceEvent>
+        member _.Observe observable =
+            new IsrDpcObservable(observable) :> IDisposableObservable<WTraceEvent>
 

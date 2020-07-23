@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <PackageReference Include="FSharp.Control.Reactive" Version="4.4.2" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="3.1.6" />
     <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="2.0.57" />
     <PackageReference Include="PInvoke.Kernel32" Version="0.6.49" />
   </ItemGroup>
