@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <Compile Include="CommandLine.fs" />
+    <Compile Include="ProcessControl.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 

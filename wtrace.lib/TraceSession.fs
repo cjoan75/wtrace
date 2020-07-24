@@ -107,7 +107,7 @@ module TraceSession =
 
 
     // Starts the ETW session
-    let StartProcessingEvents (sessionControl : TraceSessionControl) = async {
+    let StartProcessingEvents (sessionControl : TraceSessionControl) = 
         let etwHandlers = sessionControl.EtwHandlers
 
         let requiredKernelFlags = NtKeywords.Process ||| NtKeywords.Thread ||| NtKeywords.ImageLoad
@@ -179,5 +179,4 @@ module TraceSession =
         | _ -> ()
 
         // FIXME: here we will need to transmit some meta events (call stacks etc.)
-    }
 

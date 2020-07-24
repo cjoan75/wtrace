@@ -80,8 +80,6 @@ let createOrUpdateDataModel (conn : SqliteConnection) =
     executeSqlNoParams conn sql
 
 
-
-
 let insertEvents conn events = 
     let sql = @"insert into TraceEvent (EventIndex, TimeStampRelativeMSec, TimeStampQPC, DurationMSec, ProcessId, ProcessName, ThreadId, 
                         ProviderName, TaskName, OpcodeName, EventLevel, Path, Details, Result)
@@ -129,6 +127,7 @@ let insertEventFields conn eventFields =
 
     insertBatch conn sql prms getPrmValues eventFields
 
+
 let queryEvents (cmd : SqliteCommand) =
     let decodeEvent (reader : SqliteDataReader) =
         {
@@ -149,6 +148,7 @@ let queryEvents (cmd : SqliteCommand) =
         }
 
     executeQuery cmd decodeEvent
+
 
 let queryEventFields (cmd : SqliteCommand) =
     let decodeField (reader : SqliteDataReader) = 

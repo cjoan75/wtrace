@@ -4,63 +4,36 @@ module LowLevelDesign.WTrace.Program
 open System
 open System.Diagnostics
 open System.Reflection
-open System.Threading
+open System.Reactive.Concurrency
 open Microsoft.FSharp.Linq
 open Microsoft.Diagnostics.Tracing.Session
 open FSharp.Control.Reactive
 open PInvoke
+open LowLevelDesign.WTrace.Storage
+open System.Threading.Tasks
 open System.Runtime.InteropServices
 
 type TraceTarget = 
 | RunningProcess of Pid : int32 * IncludeChildren : bool
-| NewProcess of Args : list<string> * IncludeChildren : bool
+| NewProcess of Args : list<string> * NewConsole : bool * IncludeChildren : bool
 | Everything
 | SystemOnly
 
+type TraceOutput = 
+| ConsoleOutput
+| TraceFile of string
+
 type TraceOptions = {
     Target : TraceTarget
-    NewConsole : bool
     NoSummary : bool
     WithStacks : bool
+    Output : TraceOutput
 }
+
 
 let logger = new TraceSource("LowLevelDesign.WTrace")
 
-(* Launching processes logic *)
-
-#nowarn "9"
-
-let launchProcessSuspended (args) = result {
-    let mutable pi = Kernel32.PROCESS_INFORMATION()
-
-    do!
-        let mutable si = Kernel32.STARTUPINFO(hStdInput = IntPtr.Zero, hStdOutput = IntPtr.Zero, hStdError = IntPtr.Zero)
-        let flags = Kernel32.CreateProcessFlags.CREATE_SUSPENDED |||
-                    Kernel32.CreateProcessFlags.CREATE_UNICODE_ENVIRONMENT
-        // FIXME: new console Kernel32.CreateProcessFlags.CREATE_NEW_CONSOLE
-        if not (Kernel32.CreateProcess(null, args |> String.concat " ", IntPtr.Zero, IntPtr.Zero, 
-                                       false, flags, IntPtr.Zero, null, &si, &pi)) then
-            Error (WinApi.Win32ErrorMessage (Marshal.GetLastWin32Error()))
-        else Ok ()
-
-    return (pi.dwProcessId, new Kernel32.SafeObjectHandle(pi.hProcess), new Kernel32.SafeObjectHandle(pi.hThread))
-}
-
-let traceRunningProcess (pid) = result {
-    let! hProcess = 
-        let accessMask = Kernel32.ACCESS_MASK(uint32(Kernel32.ACCESS_MASK.StandardRight.SYNCHRONIZE))
-        let h = Kernel32.OpenProcess(accessMask, false, pid)
-        if h.IsInvalid then Error (WinApi.Win32ErrorMessage (Marshal.GetLastWin32Error()))
-        else Ok h
-
-    return (pid, hProcess);
-}
-
-(* Command line *)
-
 let flags = seq { "s"; "system"; "c"; "children"; "newconsole"; "nosummary"; "withstacks"; "h"; "?"; "help" }
-
-let isFlagEnabled args flags = flags |> Seq.exists (fun f -> args |> Map.containsKey f)
 
 let showHelp () =
     let appAssembly = Assembly.GetEntryAssembly();
@@ -80,12 +53,16 @@ let showHelp () =
     printfn "-c, --children        Collects traces from the selected process and all its children."
     printfn "--newconsole          Starts the process in a new console window."
     printfn "--nosummary           Prints only ETW events - no summary at the end."
-    printfn "--withstacks          Collects data required to resolve stacks (memory consumption is much higher)"
+    printfn "--withstacks          Collects data required to resolve stacks (memory consumption is much higher)."
+    printfn "--save=PATH           Save the events to a file instead of writing them to the console."
     printfn "-h, --help            Shows this message and exits."
     printfn ""
     // FIXME: save parameter and a parameter to resolve stacks
 
-let parseCmdArgs args = 
+
+let isFlagEnabled args flags = flags |> Seq.exists (fun f -> args |> Map.containsKey f)
+
+let parseCmdArgs args = result {
     let isFlagEnabled = isFlagEnabled args
     let isInteger v = 
         let r, _ = Int32.TryParse(v)
@@ -98,62 +75,97 @@ let parseCmdArgs args =
             match args |> Map.tryFind "" with 
             | None -> Everything
             | Some [ pid ] when isInteger pid -> RunningProcess (Int32.Parse(pid), seq { "c"; "children" } |> isFlagEnabled)
-            | Some args -> NewProcess (args, seq { "c"; "children" } |> isFlagEnabled)
+            | Some args -> NewProcess (args, Seq.singleton "newconsole" |> isFlagEnabled, seq { "c"; "children" } |> isFlagEnabled)
+
+    let traceOutput =
+        match args |> Map.tryFind "save" with
+        | Some [ path ] -> TraceFile path
+        | _ -> ConsoleOutput
 
     // FIXME filters
-    {
+    return {
         Target = target
-        NewConsole = Seq.singleton "newconsole" |> isFlagEnabled
         NoSummary = Seq.singleton "nosummary" |> isFlagEnabled
         WithStacks = Seq.singleton "withstacks" |> isFlagEnabled
+        Output = traceOutput
     }
+}
 
-let checkElevated () = 
-    if TraceEventSession.IsElevated() ?= true then Ok ()
-    else Error "Must be elevated (Admin) to run this program."
+
+let subscribeEventStore dbpath (traceSessionControl : TraceSessionControl) =
+    do
+        use conn = EventStore.openConnection dbpath
+        conn |> EventStore.createOrUpdateDataModel
+
+    let save events = 
+        use conn = EventStore.openConnection dbpath
+        events 
+        |> Seq.map (fun ev -> ev.Event)
+        |> EventStore.insertEvents conn
+
+        events
+        |> Seq.collect (fun ev -> ev.Fields)
+        |> EventStore.insertEventFields conn
+
+    let defaultBatchSize = 200
+
+    traceSessionControl.EventsBroadcast
+    |> Observable.bufferSpanCount (TimeSpan.FromSeconds(5.0)) defaultBatchSize
+    |> Observable.subscribe save
+
+
+let subscribeConsole (traceSessionControl : TraceSessionControl) = 
+    let consoleOutput ev =
+        let ev = ev.Event
+        printfn "%f (%d.%d) %s/%s: '%s' '%s' result: %s" 
+            ev.TimeStampRelativeMSec ev.ProcessId ev.ThreadId ev.TaskName ev.OpcodeName 
+            ev.Path ev.Details ev.Result
+    traceSessionControl.EventsBroadcast 
+    |> Observable.subscribe consoleOutput
+
+
+type TraceTargetState =
+| Suspended of hProcess : Kernel32.SafeObjectHandle * hThread : Kernel32.SafeObjectHandle
+| Running of hProcess : Kernel32.SafeObjectHandle
+| System
+
+
+let launchTargetProcessIfNeeded = function
+    | NewProcess (args, newConsole, includeChildren) -> result {
+        let! (pid, hProcess, hThread) = ProcessControl.launchProcessSuspended args newConsole
+        return if includeChildren then (TraceSessionFilter.ProcessWithChildren pid, Suspended (hProcess, hThread))
+               else (TraceSessionFilter.Process pid, Suspended (hProcess, hThread))
+      }
+    | RunningProcess (pid, includeChildren) -> result {
+        let! (pid, hProcess) = ProcessControl.traceRunningProcess pid
+        return if includeChildren then (TraceSessionFilter.ProcessWithChildren pid, Running hProcess)
+               else (TraceSessionFilter.Process pid, Running hProcess)
+      }
+    | SystemOnly -> Ok (TraceSessionFilter.KernelOnly, System)
+    | _ -> Ok (TraceSessionFilter.Everything, System)
+
 
 let start args = result {
-    let InvalidHandle = Kernel32.SafeObjectHandle.Invalid
+    let checkElevated () = 
+        if TraceEventSession.IsElevated() ?= true then Ok ()
+        else Error "Must be elevated (Admin) to run this program."
 
-    let cmdArgs = parseCmdArgs args
+    let! cmd = parseCmdArgs args
 
     do! checkElevated ()
 
-    // FIXME: create tracing session and assign Observables
-    let! (filter, hProcess, resumeThread) = 
-        match cmdArgs.Target with
-        | NewProcess (args, c) -> result {
-            let! (pid, hProcess, hThread) = launchProcessSuspended args
-            let resumeThread () = 
-                if Kernel32.ResumeThread(hThread) = -1 then 
-                    hThread.Close()
-                    Error (WinApi.Win32ErrorMessage (Marshal.GetLastWin32Error()))
-                else 
-                    hThread.Close()
-                    Ok ()
-            return if c then (TraceSessionFilter.ProcessWithChildren pid, hProcess, resumeThread)
-                   else (TraceSessionFilter.Process pid, hProcess, resumeThread)
-          }
-        | RunningProcess (pid, c) -> result {
-            let! (pid, hProcess) = traceRunningProcess pid
-            return if c then (TraceSessionFilter.ProcessWithChildren pid, hProcess, fun () -> Ok ())
-                   else (TraceSessionFilter.Process pid, hProcess, fun () -> Ok ())
-          }
-        | SystemOnly -> Ok (TraceSessionFilter.KernelOnly, InvalidHandle, fun () -> Ok ())
-        | _ -> Ok (TraceSessionFilter.Everything, InvalidHandle, fun () -> Ok ())
+    let! (filter, targetState) = launchTargetProcessIfNeeded cmd.Target
 
-    use traceSessionControl = new TraceSessionControl(filter, cmdArgs.WithStacks)
+    use traceSessionControl = new TraceSessionControl(filter, cmd.WithStacks)
 
-    // subscribe to WTrace events
-    // FIXME
-    use _subs = traceSessionControl.EventsBroadcast 
-                |> Observable.subscribe (fun ev -> printfn "%s/%s: '%s' '%s' result: %s" ev.Event.TaskName 
-                                                       ev.Event.OpcodeName ev.Event.Path ev.Event.Details ev.Event.Result)
-   
-    traceSessionControl
-    |> TraceSession.StartProcessingEvents
-    |> Async.Start
-
+    // console output
+    use _eventSub = 
+        let subscribe = 
+            match cmd.Output with
+            | ConsoleOutput -> subscribeConsole
+            | TraceFile dbpath -> subscribeEventStore dbpath
+        traceSessionControl |> subscribe
+      
     // setup Ctrl + C event
     Console.CancelKeyPress.Add(
         fun ev -> 
@@ -162,22 +174,36 @@ let start args = result {
     )
 
     // if the process exists, stop the session
-    async { 
+    let waitForProcess hProcess = 
         match Kernel32.WaitForSingleObject(hProcess, Constants.INFINITE) with
         | Kernel32.WaitForSingleObjectResult.WAIT_FAILED -> 
             logger.TraceErrorWithMessage("Wait for process failed", Win32Exception())
         | _ -> ()
         traceSessionControl.StopSession()
-    } |> Async.Start
 
+    match targetState with
+    | Suspended (hProcess, hThread) -> 
+        async {
+            // wait few seconds for the ETW session to start so we will pick up
+            // also the initial process events
+            do! Task.Delay(TimeSpan.FromSeconds(2.0)) |> Async.AwaitTask
+            if Kernel32.ResumeThread(hThread) = -1 then
+                logger.TraceErrorWithMessage("ResumeThread", Win32Exception(Marshal.GetLastWin32Error()))
+                hThread.Close()
+            else
+                waitForProcess hProcess
+                hThread.Close()
+        }|> Async.Start
+    | Running hProcess -> async { waitForProcess hProcess } |> Async.Start
+    | _ -> ()
 
-    do! resumeThread ()
+    traceSessionControl
+    |> TraceSession.StartProcessingEvents
 
-    // FIXME temporarily
-    traceSessionControl.CancellationToken.WaitHandle.WaitOne() |> ignore
-    Thread.Sleep(2000) // time to finish processings
-
-    hProcess.Close()
+    match targetState with
+    | Suspended (hProcess, _)
+    | Running hProcess -> hProcess.Close()
+    | _ -> ()
 }
 
 let main (argv : array<string>) =
