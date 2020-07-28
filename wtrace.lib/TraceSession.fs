@@ -20,7 +20,7 @@ type TraceSessionFilter =
 
 type TraceSessionControl (sessionFilter, enableStacks : bool) =
 
-    let eventsBroadcast = new Subjects.Subject<WTraceEventWithFields>()
+    let eventsBroadcast = new Subjects.Subject<WTraceEvent>()
     let cts = new CancellationTokenSource()
 
     member _.EtwHandlers : array<ITraceEtwHandler> = 
@@ -151,7 +151,7 @@ module TraceSession =
             let createObservables (h : ITraceEtwHandler) = 
                 // subscribe a given observable to all its parsers
                 let customObservables =
-                    h.UserModeProviders 
+                    h.UserModeProviders
                     |> Seq.choose (fun p -> customProviderBroadcasts |> Map.tryFind p.Id)
                     |> Seq.map (fun parser -> h.Observe parser)
 

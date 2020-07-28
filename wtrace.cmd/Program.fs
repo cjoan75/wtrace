@@ -4,7 +4,6 @@ module LowLevelDesign.WTrace.Program
 open System
 open System.Diagnostics
 open System.Reflection
-open System.Reactive.Concurrency
 open Microsoft.FSharp.Linq
 open Microsoft.Diagnostics.Tracing.Session
 open FSharp.Control.Reactive
@@ -100,7 +99,6 @@ let subscribeEventStore dbpath (traceSessionControl : TraceSessionControl) =
     let save events = 
         use conn = EventStore.openConnection dbpath
         events 
-        |> Seq.map (fun ev -> ev.Event)
         |> EventStore.insertEvents conn
 
         events
@@ -116,7 +114,6 @@ let subscribeEventStore dbpath (traceSessionControl : TraceSessionControl) =
 
 let subscribeConsole (traceSessionControl : TraceSessionControl) = 
     let consoleOutput ev =
-        let ev = ev.Event
         printfn "%f (%d.%d) %s/%s: '%s' '%s' result: %s" 
             ev.TimeStampRelativeMSec ev.ProcessId ev.ThreadId ev.TaskName ev.OpcodeName 
             ev.Path ev.Details ev.Result

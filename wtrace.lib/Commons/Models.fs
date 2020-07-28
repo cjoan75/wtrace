@@ -52,10 +52,6 @@ type WTraceEvent = {
     Path : string
     Details : string
     Result : string
-}
-
-type WTraceEventWithFields = {
-    Event : WTraceEvent
     Fields : array<WTraceEventField>
 }
 
@@ -76,7 +72,7 @@ type ITraceEtwHandler =
 
     abstract member UserModeProviders : IEnumerable<EtwProviderRegistration>
 
-    abstract member Observe : IObservable<EtwTraceEvent> -> IDisposableObservable<WTraceEventWithFields>
+    abstract member Observe : IObservable<EtwTraceEvent> -> IDisposableObservable<WTraceEvent>
 
 (* end of the C# understandable part *)
 

@@ -9,9 +9,9 @@ open Microsoft.Diagnostics.Tracing
 type IsrDpcObservable (sessionObservable : IObservable<EtwTraceEvent>) =
 
     // FIXME to implement
-    let subject = new Subjects.Subject<WTraceEventWithFields>()
+    let subject = new Subjects.Subject<WTraceEvent>()
 
-    interface IDisposableObservable<WTraceEventWithFields> with
+    interface IDisposableObservable<WTraceEvent> with
         member _.Subscribe(o) =
             subject |> Observable.subscribeObserver o
 
@@ -31,5 +31,5 @@ type IsrDpcEtwHandler () =
         member _.UserModeProviders with get() = Seq.empty<EtwProviderRegistration>
 
         member _.Observe observable =
-            new IsrDpcObservable(observable) :> IDisposableObservable<WTraceEventWithFields>
+            new IsrDpcObservable(observable) :> IDisposableObservable<WTraceEvent>
 

@@ -47,12 +47,13 @@ module EventStoreTests =
             Path = "non-existing-path"
             Details = "short details"
             Result = "SUCCESS"
+            Fields = Array.empty<WTraceEventField>
         }
 
         Seq.singleton event |> EventStore.insertEvents conn
 
         use cmd = conn.CreateCommand(CommandText = "select * from TraceEvent")
-        let events = cmd |> EventStore.queryEvents |> Seq.toArray
+        let events = cmd |> EventStore.queryEventsNoFields |> Seq.toArray
 
         events.Length |> should equal 1
         events.[0] |> should equal event

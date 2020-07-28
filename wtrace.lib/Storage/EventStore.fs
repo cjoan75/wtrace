@@ -128,7 +128,7 @@ let insertEventFields conn eventFields =
     insertBatch conn sql prms getPrmValues eventFields
 
 
-let queryEvents (cmd : SqliteCommand) =
+let queryEventsNoFields (cmd : SqliteCommand) =
     let decodeEvent (reader : SqliteDataReader) =
         {
             EventIndex = reader.GetFieldValue<uint32>("EventIndex")
@@ -145,6 +145,7 @@ let queryEvents (cmd : SqliteCommand) =
             Path = reader.GetFieldValue<string>("Path")
             Result = reader.GetFieldValue<string>("Result")
             Details = reader.GetFieldValue<string>("Details")
+            Fields = Array.empty<WTraceEventField>
         }
 
     executeQuery cmd decodeEvent

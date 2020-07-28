@@ -26,7 +26,7 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
     let logger = TraceSource("WTrace.ETW.FileIO")
 
     let subscription = sessionObservable |> Observable.subscribeObserver this
-    let subject = new Subjects.Subject<WTraceEventWithFields>()
+    let subject = new Subjects.Subject<WTraceEvent>()
 
     // a state to keep information about the pending IO requests
     // FIXME: make sure we remove old events from time to time
@@ -130,22 +130,20 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
             | _ -> assert false; ("Invalid data", String.Empty, Array.empty<WTraceEventField>)
   
         {
-            Event = {
-                EventIndex = evind
-                TimeStampRelativeMSec = ev.TimeStampRelativeMSec
-                TimeStampQPC = ev.TimeStampQPC
-                DurationMSec = completion.TimeStampRelativeMSec - ev.TimeStampRelativeMSec
-                ProcessId = ev.ProcessID
-                ProcessName = ev.ProcessName
-                ThreadId = ev.ThreadID
-                ProviderName = ev.ProviderName
-                TaskName = ev.TaskName
-                OpcodeName = ev.OpcodeName
-                EventLevel = int32 ev.Level
-                Path = path
-                Details = details
-                Result = Win32Error.GetName(typedefof<Win32Error>, completion.NtStatus) |? (sprintf "0x%X" completion.NtStatus)
-            }
+            EventIndex = evind
+            TimeStampRelativeMSec = ev.TimeStampRelativeMSec
+            TimeStampQPC = ev.TimeStampQPC
+            DurationMSec = completion.TimeStampRelativeMSec - ev.TimeStampRelativeMSec
+            ProcessId = ev.ProcessID
+            ProcessName = ev.ProcessName
+            ThreadId = ev.ThreadID
+            ProviderName = ev.ProviderName
+            TaskName = ev.TaskName
+            OpcodeName = ev.OpcodeName
+            EventLevel = int32 ev.Level
+            Path = path
+            Details = details
+            Result = Win32Error.GetName(typedefof<Win32Error>, completion.NtStatus) |? (sprintf "0x%X" completion.NtStatus)
             Fields = fields
         }
 
@@ -168,7 +166,7 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
 
         member _.OnCompleted() = assert false // the ETW observables do not send the OnCompleted events
 
-    interface IDisposableObservable<WTraceEventWithFields> with
+    interface IDisposableObservable<WTraceEvent> with
         member _.Subscribe(o) =
             subject |> Observable.subscribeObserver o
 
@@ -189,5 +187,5 @@ type FileIoEtwHandler () =
         member _.UserModeProviders with get() = Seq.empty<EtwProviderRegistration>
 
         member _.Observe observable =
-            new FileIoObservable(observable) :> IDisposableObservable<WTraceEventWithFields>
+            new FileIoObservable(observable) :> IDisposableObservable<WTraceEvent>
 
