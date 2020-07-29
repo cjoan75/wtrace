@@ -21,6 +21,7 @@ type TraceSessionFilter =
 type TraceSessionControl (sessionFilter, enableStacks : bool) =
 
     let eventsBroadcast = new Subjects.Subject<WTraceEvent>()
+    let callStacksBroadcast = new Subjects.Subject<WTraceEventCallStack>()
     let cts = new CancellationTokenSource()
 
     member _.EtwHandlers : array<ITraceEtwHandler> = 
@@ -36,11 +37,14 @@ type TraceSessionControl (sessionFilter, enableStacks : bool) =
 
     member _.EventsBroadcast = eventsBroadcast
 
+    member _.CallStacksBroadcast = callStacksBroadcast
+
     member _.StopSession() = cts.Cancel()
 
     interface IDisposable with
         member _.Dispose() =
             eventsBroadcast.Dispose()
+            callStacksBroadcast.Dispose()
             cts.Dispose()
 
 
@@ -127,10 +131,13 @@ module TraceSession =
                             | ProcessWithChildren pid -> ProcessTree (new ProcessTree(traceSession.Source, pid))
                             | Process pid -> SingleProcess pid
                             | _ -> AllProcesses
+
         let observableFilter = match processFilter with
                                | SingleProcess pid -> fun (ev : EtwTraceEvent) -> ev.ProcessID = pid
                                | ProcessTree tree -> fun ev -> tree.Contains(ev.ProcessID)
-                               | _ -> fun _ -> true
+                               | _ ->
+                                    let currentProcessId = Diagnostics.Process.GetCurrentProcess().Id
+                                    fun ev -> ev.ProcessID <> currentProcessId
 
         // prepare custom providers and parsers
         let customProviderBroadcasts = 
@@ -145,6 +152,8 @@ module TraceSession =
         use _kernelSub = traceLogSource.Kernel.Observe() 
                          |> Observable.filter observableFilter
                          |> Observable.subscribeObserver kernelBroadcast
+
+        // FIXME: subscribe the call stack observer
 
         // collect observables for all the ETW handlers
         let observables = 

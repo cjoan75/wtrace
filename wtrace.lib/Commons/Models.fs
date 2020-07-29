@@ -76,3 +76,17 @@ type ITraceEtwHandler =
 
 (* end of the C# understandable part *)
 
+type WTraceCodeAddress = {
+    CodeAddressIndex : int32
+    OffsetInMethod : int32 // RVA or IL offset from the method base address
+    HasSourceFileInfo : bool
+    FullName : string
+    // TODO: additional fields that could allow offline
+    // symbol resolution in the future
+}
+
+type WTraceEventCallStack = {
+    EventIndex : uint32
+    CallStack : array<WTraceCodeAddress>
+}
+
