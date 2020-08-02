@@ -22,10 +22,13 @@ type CallStackObservable (sessionObservable : IObservable<EtwTraceEvent>) as thi
     interface IObserver<TraceEvent> with
         member _.OnNext(ev) =
             // FIXME: perform the stack resolution
-            let callstack = ev.CallStack()
-            let codeAddresses = callstack.CodeAddress.CodeAddresses
+            let callStack = ev.CallStack()
+            let codeAddress = callStack.CodeAddress
+            //codeAddress.GetSourceLine
+            //let codeAddresses = callstack.CodeAddress.CodeAddresses
             // codeAddresses.LookupSymbolsForModule - this one finds all the addresses in the
             // range and loads them. It's bad
+            ()
 
         member _.OnError(ex) = subject.OnError(ex)
 
