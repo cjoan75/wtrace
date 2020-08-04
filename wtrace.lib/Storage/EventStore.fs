@@ -66,25 +66,17 @@ let createOrUpdateDataModel (conn : SqliteConnection) =
         EventLevel integer not null,
         Path text not null,
         Details text not null,
-        Result text not null
-    )"
-    executeSqlNoParams conn sql
-
-    let sql = @"
-    create table if not exists TraceEventField (
-        EventIndex integer not null,
-        Name text not null,
-        Type integer not null,
-        Value blob not null
+        Result text not null,
+        Payload blob not null
     )"
     executeSqlNoParams conn sql
 
 
 let insertEvents conn events = 
     let sql = @"insert into TraceEvent (EventIndex, TimeStampRelativeMSec, TimeStampQPC, DurationMSec, ProcessId, ProcessName, ThreadId, 
-                        ProviderName, TaskName, OpcodeName, EventLevel, Path, Details, Result)
+                        ProviderName, TaskName, OpcodeName, EventLevel, Path, Details, Result, Payload)
                     values (@EventIndex, @TimeStampRelativeMSec, @TimeStampQPC, @DurationMSec, @ProcessId, @ProcessName, @ThreadId, 
-                        @ProviderName, @TaskName, @OpcodeName, @EventLevel, @Path, @Details, @Result)"
+                        @ProviderName, @TaskName, @OpcodeName, @EventLevel, @Path, @Details, @Result, @Payload)"
     
     let prms = seq {
         SqliteParameter("@EventIndex", SqliteType.Integer);
@@ -101,31 +93,15 @@ let insertEvents conn events =
         SqliteParameter("@Path", SqliteType.Text);
         SqliteParameter("@Details", SqliteType.Text);
         SqliteParameter("@Result", SqliteType.Text);
+        SqliteParameter("@Payload", SqliteType.Blob);
     } 
 
     let getPrmValues (ev : WTraceEvent) : seq<obj> = 
          seq { ev.EventIndex; ev.TimeStampRelativeMSec; ev.TimeStampQPC; ev.DurationMSec;
                ev.ProcessId; ev.ProcessName; ev.ThreadId; ev.ProviderName; ev.TaskName;
-               ev.OpcodeName; ev.EventLevel; ev.Path; ev.Details; ev.Result }
+               ev.OpcodeName; ev.EventLevel; ev.Path; ev.Details; ev.Result; ev.Payload }
     
     insertBatch conn sql prms getPrmValues events
-
-
-let insertEventFields conn eventFields =
-    let sql = @"insert into TraceEventField (EventIndex, Name, Type, Value) values (@EventIndex, @Name, @Type, @Value)"
-
-    let prms =
-        seq {
-            SqliteParameter("@EventIndex", SqliteType.Integer);
-            SqliteParameter("@Name", SqliteType.Text);
-            SqliteParameter("@Type", SqliteType.Integer);
-            SqliteParameter("@Value", SqliteType.Blob);
-        }
-
-    let getPrmValues (evf : WTraceEventField) : seq<obj> =
-         seq { evf.EventIndex; evf.Name; evf.Type; evf.Value }
-
-    insertBatch conn sql prms getPrmValues eventFields
 
 
 let queryEventsNoFields (cmd : SqliteCommand) =
@@ -145,19 +121,8 @@ let queryEventsNoFields (cmd : SqliteCommand) =
             Path = reader.GetFieldValue<string>("Path")
             Result = reader.GetFieldValue<string>("Result")
             Details = reader.GetFieldValue<string>("Details")
-            Fields = Array.empty<WTraceEventField>
+            Payload = reader.GetFieldValue<array<byte>>("Payload")
         }
 
     executeQuery cmd decodeEvent
-
-
-let queryEventFields (cmd : SqliteCommand) =
-    let decodeField (reader : SqliteDataReader) = 
-        {
-            EventIndex = reader.GetFieldValue<uint32>("EventIndex")
-            Name = reader.GetFieldValue<string>("Name")
-            Type = reader.GetFieldValue<ValueType>("Type")
-            Value = reader.GetFieldValue<array<byte>>("Value")
-        }
-    executeQuery cmd decodeField
 

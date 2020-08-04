@@ -101,10 +101,6 @@ let subscribeEventStore dbpath (traceSessionControl : TraceSessionControl) =
         events 
         |> EventStore.insertEvents conn
 
-        events
-        |> Seq.collect (fun ev -> ev.Fields)
-        |> EventStore.insertEventFields conn
-
     let defaultBatchSize = 200
 
     traceSessionControl.EventsBroadcast
@@ -144,7 +140,7 @@ let launchTargetProcessIfNeeded = function
 
 let start args = result {
     let checkElevated () = 
-        if TraceEventSession.IsElevated() ?= true then Ok ()
+        if TraceSession.IsElevated () then Ok ()
         else Error "Must be elevated (Admin) to run this program."
 
     let! cmd = parseCmdArgs args

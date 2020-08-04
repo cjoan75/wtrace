@@ -4,6 +4,8 @@ module LowLevelDesign.WTrace.Globals
 open System.Diagnostics
 open System
 open System.Reactive.Linq
+open System.IO
+open System.Text
 
 type TraceSource with
     member this.TraceError (ex : Exception) =
@@ -17,6 +19,20 @@ type TraceSource with
 
     member this.TraceWarningWithMessage (msg, ex : Exception) =
         this.TraceEvent(TraceEventType.Error, 0, sprintf "%s\nDETAILS: %s" msg (ex.ToString()))
+
+
+type TraceWriterToLog (source : TraceSource, ?eventType : TraceEventType) =
+    inherit TextWriter()
+
+    let eventType = eventType |> Option.defaultValue TraceEventType.Verbose
+
+    override _.Encoding with get () = Encoding.UTF8
+
+    override _.Write (c : char) = 
+        source.TraceEvent(eventType, 0, c.ToString())
+
+    override _.Write (s : string) = 
+        source.TraceEvent(eventType, 0, s)
 
 
 type Observable with

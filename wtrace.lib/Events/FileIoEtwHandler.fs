@@ -19,8 +19,6 @@ type FileIoEvent =
 | Skipped
 
 type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
-    let encodingUTF8 = System.Text.Encoding.UTF8
-
     let fileIOTaskGuid = Guid(int32(0x90cbdc39), int16(0x4a3e), int16(0x11d1), byte(0x84), byte(0xf4), byte(0x00), byte(0x00), byte(0xf8), byte(0x04), byte(0x64), byte(0xe3))
  
     let logger = TraceSource("WTrace.ETW.FileIO")
@@ -73,61 +71,25 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
             } |> Seq.fold (fun b (a, str) -> if int32(attr &&& a) <> 0 then b + str else b) ""
 
         let evind = uint32 ev.EventIndex
-        let path, details, fields = 
+        let path, details = 
             match ev with
             | :? FileIOCreateTraceData as ev ->
                 let attrStr = fileAttrStr ev.FileAttributes
-                let fields = 
-                    [|
-                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
-                        // CHECKME (nameof ev.CreateOptions) - not sure how to print it
-                        { EventIndex = evind; Name = nameof ev.CreateDispostion; Type = ValueType.String; Value = encodingUTF8.GetBytes(ev.CreateDispostion.ToString()) }
-                        { EventIndex = evind; Name = nameof ev.ShareAccess; Type = ValueType.String; Value = encodingUTF8.GetBytes(fileShareStr ev.ShareAccess) }
-                        { EventIndex = evind; Name = nameof ev.FileAttributes; Type = ValueType.String; Value = encodingUTF8.GetBytes(attrStr) }
-                    |]
                 let details = sprintf "IRP: 0x%X, attributes: %s" ev.IrpPtr attrStr
-                (ev.FileName, details, fields)
+                (ev.FileName, details)
             | :? FileIODirEnumTraceData as ev ->
                 let details = sprintf "Directory: '%s', FileIndex: %d, IRP: 0x%X" ev.DirectoryName ev.FileIndex ev.IrpPtr
-                let fields =
-                    [|
-                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
-                        { EventIndex = evind; Name = nameof ev.DirectoryName; Type = ValueType.String; Value = encodingUTF8.GetBytes(ev.DirectoryName) }
-                        { EventIndex = evind; Name = nameof ev.FileKey; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileKey) }
-                        { EventIndex = evind; Name = nameof ev.FileIndex; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.FileIndex) }
-                    |]
-                (ev.FileName, details, fields)
+                (ev.FileName, details)
             | :? FileIOInfoTraceData as ev ->
                 let details = sprintf "IRP: 0x%X" ev.IrpPtr
-                let fields =
-                    [|
-                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
-                    |]
-                (ev.FileName, details, fields)
+                (ev.FileName, details)
             | :? FileIOReadWriteTraceData as ev ->
                 let details = sprintf "IRP: 0x%X, offset: %d, I/O size: %d" ev.IrpPtr ev.Offset ev.IoSize
-                let fields =
-                    [|
-                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
-                        { EventIndex = evind; Name = nameof ev.IoSize; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.IoSize) }
-                        { EventIndex = evind; Name = nameof ev.Offset; Type = ValueType.Integer; Value = BitConverter.GetBytes(ev.Offset) }
-                        { EventIndex = evind; Name = nameof ev.IoFlags; Type = ValueType.HexNumber; Value = BitConverter.GetBytes(ev.IoFlags) }
-                        { EventIndex = evind; Name = "Bytes"; Type = ValueType.Integer; Value = BitConverter.GetBytes(completion.ExtraInfo) }
-                    |]
-                (ev.FileName, details, fields)
+                (ev.FileName, details)
             | :? FileIOSimpleOpTraceData as ev ->
                 let details = sprintf "IRP: 0x%X" ev.IrpPtr
-                let fields =
-                    [|
-                        { EventIndex = evind; Name = nameof ev.IrpPtr; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.IrpPtr) }
-                        { EventIndex = evind; Name = nameof ev.FileObject; Type = ValueType.Address; Value = BitConverter.GetBytes(ev.FileObject) }
-                    |]
-                (ev.FileName, details, fields)
-            | _ -> assert false; ("Invalid data", String.Empty, Array.empty<WTraceEventField>)
+                (ev.FileName, details)
+            | _ -> assert false; ("Invalid data", String.Empty)
   
         {
             EventIndex = evind
@@ -144,14 +106,14 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
             Path = path
             Details = details
             Result = Win32Error.GetName(typedefof<Win32Error>, completion.NtStatus) |? (sprintf "0x%X" completion.NtStatus)
-            Fields = fields
+            Payload = ev.EventData()
         }
 
     interface IObserver<EtwTraceEvent> with
         member _.OnNext(ev) =
             match toFileIoEvent ev with
             | FileIoPending (irp, ev) ->
-                assert (not (state.ContainsKey(irp)))
+                // sometimes happens: assert (not (state.ContainsKey(irp)))
                 state.[irp] <- ev
             | FileIoCompleted (irp, ev) ->
                 match state.TryGetValue(irp) with

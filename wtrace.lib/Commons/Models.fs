@@ -22,21 +22,6 @@ type EtwEventHeader = {
 
 (* FUTURE: this part should be understandable for the C# clients too *)
 
-type ValueType = 
-| Blob = 0
-| Integer = 1 // 64-bit
-| Float = 2 // 64-bit
-| String = 3
-| HexNumber = 4
-| Address = 5
-
-type WTraceEventField = {
-    EventIndex : uint32
-    Name : string
-    Type : ValueType
-    Value : array<byte>
-}
-
 type WTraceEvent = {
     EventIndex : uint32
     TimeStampRelativeMSec : float
@@ -52,7 +37,7 @@ type WTraceEvent = {
     Path : string
     Details : string
     Result : string
-    Fields : array<WTraceEventField>
+    Payload : array<byte>
 }
 
 type IDisposableObservable<'T> =

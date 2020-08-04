@@ -47,7 +47,7 @@ module EventStoreTests =
             Path = "non-existing-path"
             Details = "short details"
             Result = "SUCCESS"
-            Fields = Array.empty<WTraceEventField>
+            Payload = Array.empty<byte>
         }
 
         Seq.singleton event |> EventStore.insertEvents conn
@@ -58,20 +58,4 @@ module EventStoreTests =
         events.Length |> should equal 1
         events.[0] |> should equal event
 
-    [<Test>]
-    let TestSavingEventFields () =
-        use conn = EventStore.openConnection path
-    
-        let fields = [| 
-            { EventIndex = 1u; Name = "field1"; Type = ValueType.Integer; Value = BitConverter.GetBytes(10L) }
-            { EventIndex = 1u; Name = "field2"; Type = ValueType.String; Value = Text.Encoding.UTF8.GetBytes("test value") }
-            { EventIndex = 1u; Name = "field3"; Type = ValueType.Blob; Value = Array.create<byte> 10 1uy }
-        |]
-
-        fields |> EventStore.insertEventFields conn
-
-        use cmd = conn.CreateCommand(CommandText = "select * from TraceEventField where EventIndex = 1")
-        let dbFields = cmd |> EventStore.queryEventFields
-
-        dbFields |> should equal fields
 

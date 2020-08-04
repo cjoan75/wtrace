@@ -14,7 +14,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Diagnostics.Tracing.TraceEvent" Version="2.0.57" />
     <PackageReference Include="PInvoke.Kernel32" Version="0.6.49" />
   </ItemGroup>
 
