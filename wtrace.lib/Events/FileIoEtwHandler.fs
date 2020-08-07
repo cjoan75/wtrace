@@ -126,7 +126,7 @@ type FileIoObservable (sessionObservable : IObservable<EtwTraceEvent>) as this =
 
         member _.OnError(ex) = subject.OnError(ex)
 
-        member _.OnCompleted() = assert false // the ETW observables do not send the OnCompleted events
+        member _.OnCompleted() = () // the ETW observables do not send the OnCompleted event - trace session sends them
 
     interface IDisposableObservable<WTraceEvent> with
         member _.Subscribe(o) =

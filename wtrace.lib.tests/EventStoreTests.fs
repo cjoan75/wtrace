@@ -16,8 +16,8 @@ type EventStoreTestsSetupUp () =
     
     [<OneTimeSetUp>]
     member _.Setup () =
-        use conn = EventStore.openConnection path
-        conn |> EventStore.createOrUpdateDataModel
+        use conn = EventsDatabase.openConnection path
+        conn |> EventsDatabase.createOrUpdateDataModel
 
     [<OneTimeTearDown>]
     member _.TearDown () =
@@ -30,7 +30,7 @@ module EventStoreTests =
 
     [<Test>]
     let TestSavingEvent () =
-        use conn = EventStore.openConnection path
+        use conn = EventsDatabase.openConnection path
 
         let event = {
             EventIndex = 1u
@@ -50,10 +50,10 @@ module EventStoreTests =
             Payload = Array.empty<byte>
         }
 
-        Seq.singleton event |> EventStore.insertEvents conn
+        Seq.singleton event |> EventsDatabase.insertEvents conn
 
         use cmd = conn.CreateCommand(CommandText = "select * from TraceEvent")
-        let events = cmd |> EventStore.queryEventsNoFields |> Seq.toArray
+        let events = cmd |> EventsDatabase.queryEventsNoFields |> Seq.toArray
 
         events.Length |> should equal 1
         events.[0] |> should equal event

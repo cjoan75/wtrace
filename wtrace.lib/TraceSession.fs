@@ -195,12 +195,12 @@ module TraceSession =
 
         traceSource.Process() |> ignore
         
+        observables |> Seq.iter (fun o -> o.Dispose())
+
         sessionControl.EventsBroadcast.OnCompleted()
 
         // FIXME: make sure we finished processing of all the callstacks
         sessionControl.CallStacksBroadcast.OnCompleted()
-
-        observables |> Seq.iter (fun o -> o.Dispose())
 
         match processFilter with
         | ProcessTree tree -> (tree :> IDisposable).Dispose()

@@ -4,8 +4,6 @@ module LowLevelDesign.WTrace.Program
 open System
 open System.Diagnostics
 open System.Reflection
-open Microsoft.FSharp.Linq
-open Microsoft.Diagnostics.Tracing.Session
 open FSharp.Control.Reactive
 open PInvoke
 open LowLevelDesign.WTrace.Storage
@@ -93,13 +91,13 @@ let parseCmdArgs args = result {
 
 let subscribeEventStore dbpath (traceSessionControl : TraceSessionControl) =
     do
-        use conn = EventStore.openConnection dbpath
-        conn |> EventStore.createOrUpdateDataModel
+        use conn = EventsDatabase.openConnection dbpath
+        conn |> EventsDatabase.createOrUpdateDataModel
 
     let save events = 
-        use conn = EventStore.openConnection dbpath
+        use conn = EventsDatabase.openConnection dbpath
         events 
-        |> EventStore.insertEvents conn
+        |> EventsDatabase.insertEvents conn
 
     let defaultBatchSize = 200
 

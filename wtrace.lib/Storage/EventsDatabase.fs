@@ -1,4 +1,4 @@
-﻿module LowLevelDesign.WTrace.Storage.EventStore
+﻿module LowLevelDesign.WTrace.Storage.EventsDatabase
 
 open Microsoft.Data.Sqlite
 open LowLevelDesign.WTrace
